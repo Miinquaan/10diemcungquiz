@@ -265,7 +265,7 @@ async function loadQuizzes() {
       button.textContent = "Bắt đầu làm quiz";
       button.addEventListener("click", () => startQuiz(quiz.id));
 
-      card.append(title, desc, button);
+      (title, desc, button);
       area.appendChild(card);
     });
   } catch (error) {
@@ -927,13 +927,24 @@ async function loadMyQuizzes() {
       count.textContent =
         "Số câu hỏi: " + (quiz.question_count || "Chưa xác định");
 
-      card.append(
-        title,
-        description,
-        visibility,
-        status,
-        count
-      );
+      
+const editButton = document.createElement("button");
+editButton.type = "button";
+editButton.textContent = "Chỉnh sửa";
+
+editButton.addEventListener("click", () => {
+  editQuiz(quiz.id);
+});
+
+card.append(
+  title,
+  description,
+  visibility,
+  status,
+  count,
+  editButton
+);
+
 
       area.appendChild(card);
     });
@@ -943,6 +954,68 @@ async function loadMyQuizzes() {
 
     area.textContent =
       "Không tải được quiz: " + error.message;
+  }
+}
+
+let editingQuizId = null;
+
+async function editQuiz(quizId) {
+  if (!db || !currentUser) {
+    alert("Vui lòng đăng nhập Google.");
+    return;
+  }
+
+  try {
+    const { data: quiz, error: quizError } = await db
+      .from("quizzes")
+      .select("*")
+      .eq("id", quizId)
+      .eq("owner_id", currentUser.id)
+      .single();
+
+    if (quizError) throw quizError;
+
+    const { data: words, error: wordsError } = await db
+      .from("vocabulary")
+      .select("english, vietnamese, example")
+      .eq("quiz_id", quizId);
+
+    if (wordsError) throw wordsError;
+
+    showPage("create");
+    editingQuizId = quizId;
+
+    document.getElementById("newQuizTitle").value =
+      quiz.title || "";
+
+    document.getElementById("newQuizDescription").value =
+      quiz.description || "";
+
+    document.getElementById("newQuizVisibility").value =
+      quiz.visibility;
+
+    document.getElementById("newQuizCount").value =
+      quiz.question_count || words.length;
+
+    document.getElementById("newQuizWords").value =
+      words.map(word =>
+        `${word.english} | ${word.vietnamese} | ${word.example || ""}`
+      ).join("\n");
+
+    const types = quiz.question_types || ["en_vi"];
+
+    document.querySelectorAll(
+      'input[name="questionType"]'
+    ).forEach(input => {
+      input.checked = types.includes(input.value);
+    });
+
+    document.getElementById("saveQuizBtn").textContent =
+      "Lưu thay đổi";
+
+  } catch (error) {
+    console.error(error);
+    alert("Không mở được quiz: " + error.message);
   }
 }
 
