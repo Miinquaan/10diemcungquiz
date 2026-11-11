@@ -1543,22 +1543,21 @@ async function reviewQuiz(quizId, approve) {
   }
 }
 
+
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("VOCAB QUIZ đang khởi động...");
 
   const connected = connectSupabase();
 
   if (connected) {
-    
     db.auth.onAuthStateChange((event, session) => {
       currentUser = session?.user || null;
-        updateLoginButton();
+      updateLoginButton();
 
-          setTimeout(() => {
+      setTimeout(() => {
         checkQuizAdmin();
-  }, 0);
-});
-
+      }, 0);
+    });
 
     await checkUser();
   }
@@ -1566,8 +1565,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("nextBtn")
     ?.addEventListener("click", nextQuestion);
 
-  // Đảm bảo nút Tạo quiz trên thanh menu
-  // luôn mở biểu mẫu mới.
+  // Đảm bảo nút Tạo quiz mở biểu mẫu mới
   document.querySelectorAll(
     'button[onclick="showPage(\'create\')"]'
   ).forEach(button => {
