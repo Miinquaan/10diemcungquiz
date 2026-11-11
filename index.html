@@ -15,6 +15,7 @@
     <nav>
       <button onclick="showPage('home')">Trang chủ</button>
       <button onclick="showPage('create')">Tạo quiz</button>
+      <button onclick="showPage('myQuizzes')">Quiz của tôi</button>
       <button onclick="showPage('history')">Lịch sử</button>
       <button id="loginBtn" onclick="loginGoogle()">
         Đăng nhập Google
@@ -65,6 +66,18 @@
       <h2>Lịch sử làm quiz</h2>
       <div id="historyList"></div>
     </section>
+    
+<section id="myQuizzes" class="page" hidden>
+  <h2>Quiz của tôi</h2>
+  <p>Quản lý các bài quiz bạn đã tạo.</p>
+
+  <button type="button" onclick="showPage('create')">
+    + Tạo quiz mới
+  </button>
+
+  <h3>Danh sách quiz đã tạo</h3>
+  <div id="myQuizList"></div>
+</section>
   </main>
 
   <footer>
