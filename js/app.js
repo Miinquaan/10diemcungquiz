@@ -1371,54 +1371,7 @@ async function showHistory() {
 }
 
 
-    const quizMap = new Map(
-      (quizzes || []).map(q => [q.id, q])
-    );
-
-    attempts.forEach((attempt, index) => {
-      const quiz = quizMap.get(attempt.quiz_id);
-
-      const card = document.createElement("div");
-      card.className = "quiz-card history-card";
-
-      const title = document.createElement("h3");
-      title.textContent =
-        quiz?.title || "Quiz không còn khả dụng";
-
-      
-const score = document.createElement("p");
-
-const correct = attempt.correct_count ?? attempt.score;
-const total = attempt.total_questions;
-
-score.textContent = total
-  ? `Kết quả: ${correct}/${total} câu đúng`
-  : `Số câu đúng: ${correct}`;
-
-
-      const duration = document.createElement("p");
-      duration.textContent =
-        "Thời gian: " +
-        formatDuration(attempt.duration_seconds || 0);
-
-      const date = document.createElement("p");
-      date.textContent =
-        "Ngày làm: " +
-        (attempt.created_at
-          ? new Date(attempt.created_at).toLocaleString("vi-VN")
-          : "Không xác định");
-
-      card.append(title, score, duration, date);
-      area.appendChild(card);
-    });
-
-  } catch (error) {
-    console.error("Lỗi lịch sử:", error);
-
-    area.textContent =
-      "Không tải được lịch sử: " + error.message;
-  }
-}
+  
 
 
 // =====================================
