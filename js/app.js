@@ -2,8 +2,8 @@
 "use strict";
 
 // Cấu hình Supabase
-const SUPABASE_URL = "";
-const SUPABASE_ANON_KEY = "";
+const SUPABASE_URL = "https://tdekbojbftntitllftl.supabase.co"";
+const SUPABASE_ANON_KEY = "sb_publishable_GnRVaCZsV43UDnJHNon9ng_GSvUe6YT";
 
 let db = null;
 
