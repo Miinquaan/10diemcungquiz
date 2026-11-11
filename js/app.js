@@ -6,7 +6,7 @@
 // ======================================
 
 // Kiem tra lai URL voi Supabase Project Settings
-const SUPABASE_URL = "https://tdekbojbftntitllftl.supabase.co";
+const SUPABASE_URL = "https://tdekbojbfnttitllfltl.supabase.co/rest/v1/";
 
 // Dan Publishable Key cua ban vao day
 const SUPABASE_ANON_KEY = "sb_publishable_GnRVaCZsV43UDnJHNon9ng_GSvUe6YT";
