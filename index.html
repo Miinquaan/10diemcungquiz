@@ -3,11 +3,72 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VOCAB QUIZ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VOCAB QUIZ - Học từ vựng</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="js/app.js" defer></script>
 </head>
 <body>
-  <h1>Chào mừng đến với VOCAB QUIZ!</h1>
-  <p>Website học từ vựng đang được xây dựng.</p>
+  <header class="site-header">
+    <h1>VOCAB QUIZ</h1>
+    <nav>
+      <button onclick="showPage('home')">Trang chủ</button>
+      <button onclick="showPage('create')">Tạo quiz</button>
+      <button onclick="showPage('history')">Lịch sử</button>
+      <button id="loginBtn" onclick="loginGoogle()">
+        Đăng nhập Google
+      </button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="home" class="page">
+      <h2>Chọn môn học</h2>
+      <div class="subjects">
+        <button onclick="showPage('library')">
+          Tiếng Anh
+        </button>
+        <button disabled>Sinh học (sắp ra mắt)</button>
+        <button disabled>Lịch sử (sắp ra mắt)</button>
+      </div>
+    </section>
+
+    <section id="library" class="page" hidden>
+      <h2>Kho quiz tiếng Anh</h2>
+      <p>Khám phá các bài quiz từ vựng.</p>
+      <div id="quizList"></div>
+    </section>
+
+    <section id="create" class="page" hidden>
+      <h2>Tạo bài quiz</h2>
+      <p>Đăng nhập Google để tạo và chia sẻ quiz.</p>
+      <div id="createQuizForm"></div>
+    </section>
+
+    <section id="play" class="page" hidden>
+      <h2 id="quizTitle">Làm bài quiz</h2>
+      <p>Thời gian: <span id="timer">00:00</span></p>
+      <div id="questionArea"></div>
+      <div id="answerFeedback"></div>
+      <button id="nextBtn" hidden>Câu tiếp theo</button>
+    </section>
+
+    <section id="results" class="page" hidden>
+      <h2>Kết quả bài làm</h2>
+      <div id="resultContent"></div>
+      <h3>Bảng xếp hạng</h3>
+      <div id="leaderboard"></div>
+    </section>
+
+    <section id="history" class="page" hidden>
+      <h2>Lịch sử làm quiz</h2>
+      <div id="historyList"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>VOCAB QUIZ - Học từ vựng hiệu quả</p>
+  </footer>
 </body>
 </html>
