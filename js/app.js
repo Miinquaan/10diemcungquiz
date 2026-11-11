@@ -596,9 +596,11 @@ async function finishQuiz() {
   user_id: currentUser.id,
   score: correctAnswers,
   correct_count: correctAnswers,
+  wrong_count: activeQuestions.length - correctAnswers,
   total_questions: activeQuestions.length,
   duration_seconds: seconds
 });
+
 
 
       if (error) throw error;
@@ -654,12 +656,13 @@ async function loadLeaderboard(quizId) {
 
       area.appendChild(p);
     });
-  } catch (error) {
-    console.error(error);
-    area.textContent =
-      "Không tải được bảng xếp hạng.";
-  }
+ 
+} catch (error) {
+  console.error("Lỗi bảng xếp hạng:", error);
+  area.textContent =
+    "Không tải được bảng xếp hạng: " + error.message;
 }
+
 
 // =====================================
 // 12. BIEU MAU TAO / CHINH SUA QUIZ
