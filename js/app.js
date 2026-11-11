@@ -761,6 +761,40 @@ async function saveNewQuiz(event) {
     }
 
     message.textContent = "Đang lưu quiz...";
+    
+    // CHẾ ĐỘ CHỈNH SỬA QUIZ
+    if (editingQuizId) {
+      message.textContent = "Đang cập nhật quiz...";
+
+      const { error: updateError } = await db.rpc(
+        "update_my_quiz",
+        {
+          p_quiz_id: editingQuizId,
+          p_title: title,
+          p_description: description,
+          p_visibility: visibility,
+          p_question_count: count,
+          p_question_types: questionTypes,
+          p_words: words
+        }
+      );
+
+      if (updateError) throw updateError;
+
+      editingQuizId = null;
+
+      message.textContent =
+        visibility === "public"
+          ? "Đã cập nhật! Quiz đang chờ duyệt lại."
+          : "Đã cập nhật quiz riêng tư thành công!";
+
+      setTimeout(() => {
+        showPage("myQuizzes");
+      }, 1000);
+
+      return;
+    }
+
 
     const status =
       visibility === "public" ? "pending" : "published";
