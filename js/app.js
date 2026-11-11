@@ -244,27 +244,256 @@ async function loadQuizzes() {
 // 8. TRANG TAO QUIZ
 // ======================================
 
+
 function showCreatePage() {
   const area = document.getElementById("createQuizForm");
-
   if (!area) return;
 
   area.replaceChildren();
 
-  const message = document.createElement("p");
-
-  if (!db) {
-    message.textContent = "Chua ket noi Supabase.";
-  } else if (!currentUser) {
-    message.textContent =
-      "Vui long dang nhap Google de tao quiz.";
-  } else {
-    message.textContent =
-      "Ban da dang nhap. Bieu mau tao quiz se duoc bo sung.";
+  if (!currentUser) {
+    area.textContent = "Vui lòng đăng nhập Google để tạo quiz.";
+    return;
   }
 
-  area.appendChild(message);
+  area.innerHTML = `
+    <form id="newQuizForm" class="quiz-form">
+      <h3>Thông tin bài quiz</h3>
+
+      <label>Tiêu đề quiz</label>
+      <input id="newQuizTitle" required
+        maxlength="150"
+        placeholder="Ví dụ: Từ vựng Unit 4">
+
+      <label>Mô tả</label>
+      <textarea id="newQuizDescription"
+        placeholder="Giới thiệu nội dung quiz"></textarea>
+
+      <label>Chế độ chia sẻ</label>
+      <select id="newQuizVisibility">
+        <option value="private">Riêng tư</option>
+        <option value="public">Công khai (chờ duyệt)</option>
+      </select>
+
+      <h3>Dạng câu hỏi</h3>
+
+      <label>
+        <input type="checkbox" name="questionType"
+          value="en_vi" checked>
+        Tiếng Anh → Tiếng Việt
+      </label>
+
+      <label>
+        <input type="checkbox" name="questionType"
+          value="vi_en">
+        Tiếng Việt → Tiếng Anh
+      </label>
+
+      <label>
+        <input type="checkbox" name="questionType"
+          value="cloze">
+        Điền từ vào câu
+      </label>
+
+      <label>Số lượng câu hỏi</label>
+      <input id="newQuizCount" type="number"
+        min="1" value="10" required>
+
+      <h3>Danh sách từ vựng</h3>
+      <p>Mỗi dòng nhập theo định dạng:</p>
+      <p><strong>Tiếng Anh | Nghĩa tiếng Việt | Câu ví dụ</strong></p>
+
+      <textarea id="newQuizWords" rows="10" required
+        placeholder="achieve | đạt được | She achieved her goal.
+benefit | lợi ích | Reading has many benefits.
+develop | phát triển | We develop new skills."></textarea>
+
+      <p id="quizSaveMessage"></p>
+
+      <button type="submit" id="saveQuizBtn">
+        Lưu bài quiz
+      </button>
+    </form>
+  `;
+
+  document.getElementById("newQuizForm")
+    .addEventListener("submit", saveNewQuiz);
 }
+
+function parseVocabulary(text) {
+  const lines = text.split(/\r?\n/);
+  const words = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    const parts = line.split("|").map(x => x.trim());
+
+    if (
+      parts.length < 2 ||
+      parts.length > 3 ||
+      !parts[0] ||
+      !parts[1]
+    ) {
+      throw new Error(
+        `Dòng ${i + 1} không đúng định dạng.`
+      );
+    }
+
+    words.push({
+      english: parts[0],
+      vietnamese: parts[1],
+      example: parts[2] || ""
+    });
+  }
+
+  return words;
+}
+
+async function saveNewQuiz(event) {
+  event.preventDefault();
+
+  const message = document.getElementById("quizSaveMessage");
+  const button = document.getElementById("saveQuizBtn");
+
+  if (!db || !currentUser) {
+    message.textContent = "Vui lòng đăng nhập lại.";
+    return;
+  }
+
+  let createdQuizId = null;
+  button.disabled = true;
+  message.textContent = "Đang kiểm tra dữ liệu...";
+
+  try {
+    const title =
+      document.getElementById("newQuizTitle").value.trim();
+
+    const description =
+      document.getElementById("newQuizDescription").value.trim();
+
+    const visibility =
+      document.getElementById("newQuizVisibility").value;
+
+    const count = Number(
+      document.getElementById("newQuizCount").value
+    );
+
+    const questionTypes = Array.from(
+      document.querySelectorAll(
+        'input[name="questionType"]:checked'
+      )
+    ).map(x => x.value);
+
+    const words = parseVocabulary(
+      document.getElementById("newQuizWords").value
+    );
+
+    if (!title) {
+      throw new Error("Bạn chưa nhập tiêu đề quiz.");
+    }
+
+    if (questionTypes.length === 0) {
+      throw new Error("Hãy chọn ít nhất một dạng câu hỏi.");
+    }
+
+    if (words.length < 4) {
+      throw new Error(
+        "Cần ít nhất 4 từ vựng để tạo câu hỏi trắc nghiệm."
+      );
+    }
+
+    if (!Number.isInteger(count) ||
+        count < 1 ||
+        count > words.length) {
+      throw new Error(
+        "Số câu hỏi phải từ 1 đến số từ vựng đã nhập."
+      );
+    }
+
+    if (
+      questionTypes.includes("cloze") &&
+      words.some(w => !w.example)
+    ) {
+      throw new Error(
+        "Khi chọn điền từ, mỗi từ cần có câu ví dụ."
+      );
+    }
+
+    message.textContent = "Đang lưu quiz...";
+
+    const status =
+      visibility === "public" ? "pending" : "published";
+
+    const { data: quiz, error: quizError } = await db
+      .from("quizzes")
+      .insert({
+        owner_id: currentUser.id,
+        title,
+        description,
+        subject: "english",
+        visibility,
+        status,
+        question_count: count,
+        question_types: questionTypes
+      })
+      .select("id")
+      .single();
+
+    if (quizError) throw quizError;
+
+    createdQuizId = quiz.id;
+
+    const vocabularyRows = words.map(word => ({
+      quiz_id: createdQuizId,
+      english: word.english,
+      vietnamese: word.vietnamese,
+      example: word.example
+    }));
+
+    const { error: wordsError } = await db
+      .from("vocabulary")
+      .insert(vocabularyRows);
+
+    if (wordsError) throw wordsError;
+
+    message.textContent =
+      visibility === "public"
+        ? "Đã gửi quiz thành công! Đang chờ quản trị viên duyệt."
+        : "Đã lưu quiz riêng tư thành công!";
+
+    document.getElementById("newQuizForm").reset();
+
+  } catch (error) {
+    console.error("Lỗi lưu quiz:", error);
+
+    message.textContent =
+      "Không thể lưu quiz: " + error.message;
+
+    // Chỉ xóa bản quiz chưa hoàn chỉnh nếu có quyền xóa.
+    if (createdQuizId) {
+      const { error: cleanupError } = await db
+        .from("quizzes")
+        .delete()
+        .eq("id", createdQuizId)
+        .eq("owner_id", currentUser.id);
+
+      if (cleanupError) {
+        console.error(
+          "Không thể dọn quiz chưa hoàn chỉnh:",
+          cleanupError
+        );
+        message.textContent +=
+          " Có thể còn một quiz chưa hoàn chỉnh trong cơ sở dữ liệu.";
+      }
+    }
+
+  } finally {
+    button.disabled = false;
+  }
+}
+
 
 // ======================================
 // 9. LICH SU
