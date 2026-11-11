@@ -657,11 +657,14 @@ async function loadLeaderboard(quizId) {
       area.appendChild(p);
     });
  
-} catch (error) {
-  console.error("Lỗi bảng xếp hạng:", error);
-  area.textContent =
-    "Không tải được bảng xếp hạng: " + error.message;
+
+  } catch (error) {
+    console.error("Lỗi bảng xếp hạng:", error);
+    area.textContent =
+      "Không tải được bảng xếp hạng: " + error.message;
+  }
 }
+
 
 
 // =====================================
