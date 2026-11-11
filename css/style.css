@@ -263,3 +263,12 @@ footer {
   transform: translateY(-2px);
 }
 
+.quiz-card .delete-quiz-btn {
+  background-color: #dc2626;
+  color: white;
+}
+
+.quiz-card .delete-quiz-btn:hover {
+  background-color: #b91c1c;
+}
+
