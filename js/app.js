@@ -156,13 +156,14 @@ function updateLoginButton() {
   if (!btn) return;
 
   if (currentUser) {
-    btn.textContent = "Dang xuat";
+    btn.textContent = "Đăng xuất";
     btn.title = currentUser.email || "";
   } else {
-    btn.textContent = "Dang nhap Google";
+    btn.textContent = "Đăng nhập Google";
     btn.title = "";
   }
 }
+
 
 async function checkUser() {
   if (!db) return;
