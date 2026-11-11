@@ -187,31 +187,62 @@ async function checkUser() {
 // 7. KHO QUIZ CONG KHAI
 // ======================================
 
+
+let activeQuiz = null;
+let activeQuestions = [];
+let questionIndex = 0;
+let correctAnswers = 0;
+let startedAt = 0;
+let timerInterval = null;
+let answeredCurrent = false;
+
+function shuffle(items) {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+function formatDuration(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
+}
+
+function stopTimer() {
+  if (timerInterval !== null) {
+    clearInterval(timerInterval);
+  }
+  timerInterval = null;
+}
+
 async function loadQuizzes() {
   const area = document.getElementById("quizList");
-
   if (!area) return;
 
-  area.textContent = "Dang tai danh sach quiz...";
+  area.textContent = "Đang tải danh sách quiz...";
 
   if (!db) {
-    area.textContent = "Chua ket noi Supabase.";
+    area.textContent = "Chưa kết nối Supabase.";
     return;
   }
 
   try {
     const { data, error } = await db
       .from("quizzes")
-      .select("id, title, description")
+      .select("id, title, description, question_count, question_types")
       .eq("visibility", "public")
-      .eq("status", "published");
+      .eq("status", "published")
+      .order("created_at", { ascending: false });
 
     if (error) throw error;
 
     area.replaceChildren();
 
-    if (!data || data.length === 0) {
-      area.textContent = "Chua co quiz cong khai.";
+    if (!data?.length) {
+      area.textContent = "Chưa có quiz công khai.";
       return;
     }
 
@@ -225,20 +256,329 @@ async function loadQuizzes() {
       const desc = document.createElement("p");
       desc.textContent = quiz.description || "";
 
-      const note = document.createElement("p");
-      note.textContent =
-        "Chuc nang lam quiz dang duoc phat trien.";
+      const button = document.createElement("button");
+      button.textContent = "Bắt đầu làm quiz";
+      button.addEventListener("click", () => startQuiz(quiz.id));
 
-      card.append(title, desc, note);
+      card.append(title, desc, button);
       area.appendChild(card);
     });
-
   } catch (error) {
-    console.error("Loi tai quiz:", error);
-    area.textContent =
-      "Khong tai duoc quiz: " + error.message;
+    console.error("Lỗi tải quiz:", error);
+    area.textContent = "Không tải được quiz: " + error.message;
   }
 }
+
+function makeQuestions(words, quiz) {
+  const available = words.filter(
+    w => w.english?.trim() && w.vietnamese?.trim()
+  );
+
+  if (available.length < 4) {
+    throw new Error("Quiz cần ít nhất 4 từ vựng hợp lệ.");
+  }
+
+  const types = (quiz.question_types || ["en_vi"]).map(t => {
+    if (t === "en-vi") return "en_vi";
+    if (t === "vi-en") return "vi_en";
+    return t;
+  });
+
+  const allowed = types.filter(
+    t => ["en_vi", "vi_en", "cloze"].includes(t)
+  );
+
+  if (!allowed.length) allowed.push("en_vi");
+
+  const count = Math.min(
+    Math.max(1, quiz.question_count || available.length),
+    available.length
+  );
+
+  const chosen = shuffle(available).slice(0, count);
+
+  return chosen.map((word, index) => {
+    let type = allowed[index % allowed.length];
+    let prompt;
+    let answer;
+    let pool;
+
+    if (type === "cloze") {
+      const example = word.example || "";
+      const position = example.toLocaleLowerCase()
+        .indexOf(word.english.toLocaleLowerCase());
+
+      if (position >= 0) {
+        prompt = example.slice(0, position) +
+          "_____" +
+          example.slice(position + word.english.length);
+
+        answer = word.english;
+        pool = available.map(w => w.english);
+      } else {
+        type = "en_vi";
+      }
+    }
+
+    if (type === "vi_en") {
+      prompt = word.vietnamese;
+      answer = word.english;
+      pool = available.map(w => w.english);
+    } else if (type === "en_vi") {
+      prompt = word.english;
+      answer = word.vietnamese;
+      pool = available.map(w => w.vietnamese);
+    }
+
+    const distractors = shuffle([
+      ...new Set(pool.filter(x => x !== answer))
+    ]).slice(0, 3);
+
+    if (distractors.length < 3) {
+      throw new Error(
+        "Cần ít nhất 4 đáp án phân biệt để tạo trắc nghiệm."
+      );
+    }
+
+    return {
+      type,
+      prompt,
+      answer,
+      options: shuffle([answer, ...distractors])
+    };
+  });
+}
+
+async function startQuiz(quizId) {
+  stopTimer();
+  showPage("play");
+
+  const area = document.getElementById("questionArea");
+  area.textContent = "Đang tải câu hỏi...";
+
+  document.getElementById("answerFeedback").textContent = "";
+  document.getElementById("nextBtn").hidden = true;
+
+  try {
+    const { data: quiz, error: quizError } = await db
+      .from("quizzes")
+      .select("id, title, question_count, question_types, visibility, status, owner_id")
+      .eq("id", quizId)
+      .single();
+
+    if (quizError) throw quizError;
+
+    if (
+      !(quiz.visibility === "public" && quiz.status === "published") &&
+      quiz.owner_id !== currentUser?.id
+    ) {
+      throw new Error("Bạn không có quyền truy cập quiz này.");
+    }
+
+    const { data: words, error: wordsError } = await db
+      .from("vocabulary")
+      .select("english, vietnamese, example")
+      .eq("quiz_id", quizId);
+
+    if (wordsError) throw wordsError;
+
+    activeQuestions = makeQuestions(words || [], quiz);
+    activeQuiz = quiz;
+    questionIndex = 0;
+    correctAnswers = 0;
+    answeredCurrent = false;
+
+    document.getElementById("quizTitle").textContent = quiz.title;
+
+    startedAt = Date.now();
+    document.getElementById("timer").textContent = "00:00";
+
+    timerInterval = setInterval(() => {
+      const seconds = Math.floor(
+        (Date.now() - startedAt) / 1000
+      );
+
+      document.getElementById("timer").textContent =
+        formatDuration(seconds);
+    }, 1000);
+
+    renderQuestion();
+  } catch (error) {
+    console.error("Lỗi mở quiz:", error);
+    area.textContent = "Không mở được quiz: " + error.message;
+  }
+}
+
+function renderQuestion() {
+  const question = activeQuestions[questionIndex];
+  const area = document.getElementById("questionArea");
+  const feedback = document.getElementById("answerFeedback");
+  const next = document.getElementById("nextBtn");
+
+  area.replaceChildren();
+  feedback.textContent = "";
+  next.hidden = true;
+  answeredCurrent = false;
+
+  const heading = document.createElement("h3");
+  heading.textContent =
+    `Câu ${questionIndex + 1}/${activeQuestions.length}`;
+
+  const instruction = document.createElement("p");
+  instruction.textContent =
+    question.type === "en_vi"
+      ? "Chọn nghĩa tiếng Việt:"
+      : question.type === "vi_en"
+        ? "Chọn từ tiếng Anh:"
+        : "Chọn từ còn thiếu:";
+
+  const prompt = document.createElement("h3");
+  prompt.textContent = question.prompt;
+
+  area.append(heading, instruction, prompt);
+
+  question.options.forEach(option => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "answer-option";
+    btn.textContent = option;
+
+    btn.style.display = "block";
+    btn.style.margin = "10px 0";
+    btn.style.width = "100%";
+    btn.style.textAlign = "left";
+
+    btn.addEventListener("click", () => {
+      if (answeredCurrent) return;
+
+      answeredCurrent = true;
+
+      const correct = option === question.answer;
+
+      if (correct) correctAnswers++;
+
+      feedback.textContent = correct
+        ? "Chính xác!"
+        : `Chưa đúng. Đáp án: ${question.answer}`;
+
+      area.querySelectorAll(".answer-option").forEach(b => {
+        b.disabled = true;
+
+        if (b.textContent === question.answer) {
+          b.style.background = "#dcfce7";
+          b.style.color = "#166534";
+        } else if (b === btn && !correct) {
+          b.style.background = "#fee2e2";
+          b.style.color = "#991b1b";
+        }
+      });
+
+      next.hidden = false;
+      next.textContent =
+        questionIndex === activeQuestions.length - 1
+          ? "Xem kết quả"
+          : "Câu tiếp theo";
+    });
+
+    area.appendChild(btn);
+  });
+}
+
+async function nextQuestion() {
+  if (!answeredCurrent) return;
+
+  if (questionIndex + 1 < activeQuestions.length) {
+    questionIndex++;
+    renderQuestion();
+  } else {
+    await finishQuiz();
+  }
+}
+
+async function finishQuiz() {
+  stopTimer();
+
+  const seconds = Math.max(
+    1,
+    Math.floor((Date.now() - startedAt) / 1000)
+  );
+
+  const quiz = activeQuiz;
+  showPage("results");
+
+  const area = document.getElementById("resultContent");
+  area.replaceChildren();
+
+  const summary = document.createElement("p");
+  summary.textContent =
+    `${quiz.title}: ${correctAnswers}/${activeQuestions.length} câu đúng, ` +
+    `${activeQuestions.length - correctAnswers} câu sai. ` +
+    `Thời gian: ${formatDuration(seconds)}.`;
+
+  area.appendChild(summary);
+
+  const note = document.createElement("p");
+  area.appendChild(note);
+
+  if (currentUser) {
+    const { error } = await db
+      .from("quiz_attempts")
+      .insert({
+        quiz_id: quiz.id,
+        user_id: currentUser.id,
+        score: correctAnswers,
+        duration_seconds: seconds
+      });
+
+    note.textContent = error
+      ? "Chưa lưu được kết quả: " + error.message
+      : "Đã lưu kết quả.";
+  } else {
+    note.textContent =
+      "Bạn đang làm bài với tư cách khách; kết quả chưa được lưu.";
+  }
+
+  await loadLeaderboard(quiz.id);
+}
+
+async function loadLeaderboard(quizId) {
+  const area = document.getElementById("leaderboard");
+  area.textContent = "Đang tải bảng xếp hạng...";
+
+  const { data, error } = await db
+    .from("leaderboard")
+    .select("*")
+    .eq("quiz_id", quizId)
+    .order("score", { ascending: false })
+    .order("duration_seconds", { ascending: true })
+    .limit(20);
+
+  if (error) {
+    console.warn("Lỗi bảng xếp hạng:", error.message);
+    area.textContent =
+      "Bảng xếp hạng chưa được cấu hình đầy đủ.";
+    return;
+  }
+
+  area.replaceChildren();
+
+  if (!data?.length) {
+    area.textContent = "Chưa có kết quả xếp hạng.";
+    return;
+  }
+
+  data.forEach((row, index) => {
+    const p = document.createElement("p");
+
+    p.textContent =
+      `${index + 1}. ${row.display_name || "Người chơi"} — ` +
+      `${row.score} điểm — ` +
+      `${formatDuration(row.duration_seconds || 0)}`;
+
+    area.appendChild(p);
+  });
+}
+
 
 // ======================================
 // 8. TRANG TAO QUIZ
@@ -528,6 +868,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     await checkUser();
   }
+
+  
+document.getElementById("nextBtn")
+  ?.addEventListener("click", nextQuestion);
 
   console.log("VOCAB QUIZ da san sang.");
 });
