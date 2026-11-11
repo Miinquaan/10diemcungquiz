@@ -21,11 +21,12 @@ let currentUser = null;
 // 2. CHUYEN TRANG
 // ======================================
 
+
 function showPage(pageId) {
   const target = document.getElementById(pageId);
 
   if (!target) {
-    console.error("Khong tim thay trang:", pageId);
+    console.error("Không tìm thấy trang:", pageId);
     return;
   }
 
@@ -33,23 +34,16 @@ function showPage(pageId) {
     page.hidden = page.id !== pageId;
   });
 
-  if (pageId === "library") {
-    loadQuizzes();
-  }
+  if (pageId === "library") loadQuizzes();
+  if (pageId === "history") showHistory();
+  if (pageId === "myQuizzes") loadMyQuizzes();
 
   if (pageId === "create") {
+    editingQuizId = null;
     showCreatePage();
   }
-
-  if (pageId === "history") {
-    showHistory();
-    
-  if (pageId === "myQuizzes") {
-  loadMyQuizzes();
 }
 
-  }
-}
 
 // ======================================
 // 3. KET NOI SUPABASE
@@ -265,7 +259,7 @@ async function loadQuizzes() {
       button.textContent = "Bắt đầu làm quiz";
       button.addEventListener("click", () => startQuiz(quiz.id));
 
-      (title, desc, button);
+     card.append(title, desc, button);
       area.appendChild(card);
     });
   } catch (error) {
