@@ -43,6 +43,11 @@ function showPage(pageId) {
 
   if (pageId === "history") {
     showHistory();
+    
+  if (pageId === "myQuizzes") {
+  loadMyQuizzes();
+}
+
   }
 }
 
@@ -805,6 +810,10 @@ async function saveNewQuiz(event) {
 
     document.getElementById("newQuizForm").reset();
 
+setTimeout(() => {
+  showPage("myQuizzes");
+}, 1000);
+
   } catch (error) {
     console.error("Lỗi lưu quiz:", error);
 
@@ -847,6 +856,94 @@ function showHistory() {
   area.textContent = currentUser
     ? "Chuc nang lich su dang duoc phat trien."
     : "Dang nhap de xem lich su lam quiz.";
+}
+
+async function loadMyQuizzes() {
+  const area = document.getElementById("myQuizList");
+  if (!area) return;
+
+  area.replaceChildren();
+
+  if (!currentUser) {
+    area.textContent =
+      "Vui lòng đăng nhập Google để xem quiz của bạn.";
+    return;
+  }
+
+  if (!db) {
+    area.textContent = "Chưa kết nối Supabase.";
+    return;
+  }
+
+  area.textContent = "Đang tải quiz của bạn...";
+
+  try {
+    const { data, error } = await db
+      .from("quizzes")
+      .select(
+        "id, title, description, visibility, status, question_count, created_at"
+      )
+      .eq("owner_id", currentUser.id)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    area.replaceChildren();
+
+    if (!data || data.length === 0) {
+      area.textContent =
+        "Bạn chưa tạo quiz nào. Nhấn Tạo quiz mới để bắt đầu.";
+      return;
+    }
+
+    data.forEach(quiz => {
+      const card = document.createElement("div");
+      card.className = "quiz-card";
+
+      const title = document.createElement("h3");
+      title.textContent = quiz.title || "Quiz chưa đặt tên";
+
+      const description = document.createElement("p");
+      description.textContent = quiz.description || "";
+
+      const visibility = document.createElement("p");
+      visibility.textContent =
+        quiz.visibility === "public"
+          ? "Chế độ: Công khai"
+          : "Chế độ: Riêng tư";
+
+      const status = document.createElement("p");
+
+      if (quiz.status === "pending") {
+        status.textContent = "Trạng thái: Đang chờ duyệt";
+      } else if (quiz.status === "published") {
+        status.textContent = "Trạng thái: Đã xuất bản";
+      } else {
+        status.textContent =
+          "Trạng thái: " + quiz.status;
+      }
+
+      const count = document.createElement("p");
+      count.textContent =
+        "Số câu hỏi: " + (quiz.question_count || "Chưa xác định");
+
+      card.append(
+        title,
+        description,
+        visibility,
+        status,
+        count
+      );
+
+      area.appendChild(card);
+    });
+
+  } catch (error) {
+    console.error("Lỗi tải quiz cá nhân:", error);
+
+    area.textContent =
+      "Không tải được quiz: " + error.message;
+  }
 }
 
 // ======================================
