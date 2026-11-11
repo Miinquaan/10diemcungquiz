@@ -55,6 +55,10 @@ function showPage(pageId, options = {}) {
   if (pageId === "library") loadQuizzes();
   if (pageId === "myQuizzes") loadMyQuizzes();
   if (pageId === "history") showHistory();
+  if (pageId === "admin") {
+  loadPendingQuizzes();
+}
+
   if (pageId === "create") showCreatePage();
 }
 
@@ -166,6 +170,9 @@ async function checkUser() {
     }
 
     currentUser = data?.user || null;
+    
+await checkQuizAdmin();
+
     updateLoginButton();
   } catch (error) {
     console.error(error);
@@ -1279,18 +1286,271 @@ async function editQuiz(quizId) {
 // 17. LICH SU
 // =====================================
 
-function showHistory() {
+
+async function showHistory() {
   const area = document.getElementById("historyList");
   if (!area) return;
 
-  area.textContent = currentUser
-    ? "Chức năng lịch sử đang được phát triển."
-    : "Đăng nhập để xem lịch sử làm quiz.";
+  area.replaceChildren();
+
+  if (!currentUser) {
+    area.textContent =
+      "Vui lòng đăng nhập Google để xem lịch sử.";
+    return;
+  }
+
+  if (!db) {
+    area.textContent = "Chưa kết nối Supabase.";
+    return;
+  }
+
+  area.textContent = "Đang tải lịch sử làm bài...";
+
+  try {
+    const { data: attempts, error } = await db
+      .from("quiz_attempts")
+      .select(
+        "quiz_id,score,duration_seconds,created_at"
+      )
+      .eq("user_id", currentUser.id)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+
+    area.replaceChildren();
+
+    if (!attempts?.length) {
+      area.textContent =
+        "Bạn chưa có lượt làm bài nào được lưu.";
+      return;
+    }
+
+    const quizIds = [
+      ...new Set(attempts.map(a => a.quiz_id))
+    ];
+
+    const { data: quizzes, error: quizError } = await db
+      .from("quizzes")
+      .select("id,title,question_count")
+      .in("id", quizIds);
+
+    if (quizError) {
+      console.warn(
+        "Không lấy đủ thông tin quiz:",
+        quizError
+      );
+    }
+
+    const quizMap = new Map(
+      (quizzes || []).map(q => [q.id, q])
+    );
+
+    attempts.forEach((attempt, index) => {
+      const quiz = quizMap.get(attempt.quiz_id);
+
+      const card = document.createElement("div");
+      card.className = "quiz-card history-card";
+
+      const title = document.createElement("h3");
+      title.textContent =
+        quiz?.title || "Quiz không còn khả dụng";
+
+      const score = document.createElement("p");
+      score.textContent = quiz?.question_count
+        ? `Điểm: ${attempt.score}/${quiz.question_count}`
+        : `Số câu đúng: ${attempt.score}`;
+
+      const duration = document.createElement("p");
+      duration.textContent =
+        "Thời gian: " +
+        formatDuration(attempt.duration_seconds || 0);
+
+      const date = document.createElement("p");
+      date.textContent =
+        "Ngày làm: " +
+        (attempt.created_at
+          ? new Date(attempt.created_at).toLocaleString("vi-VN")
+          : "Không xác định");
+
+      card.append(title, score, duration, date);
+      area.appendChild(card);
+    });
+
+  } catch (error) {
+    console.error("Lỗi lịch sử:", error);
+
+    area.textContent =
+      "Không tải được lịch sử: " + error.message;
+  }
 }
+
 
 // =====================================
 // 18. KHOI DONG WEBSITE
 // =====================================
+
+// =====================================
+// QUAN TRI VIEN - DUYET QUIZ
+// =====================================
+
+let isQuizAdmin = false;
+
+async function checkQuizAdmin() {
+  isQuizAdmin = false;
+
+  const navButton = document.getElementById("adminNavBtn");
+
+  if (navButton) navButton.hidden = true;
+
+  if (!db || !currentUser) return false;
+
+  try {
+    const { data, error } = await db
+      .from("quiz_admins")
+      .select("user_id")
+      .eq("user_id", currentUser.id)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    isQuizAdmin = Boolean(data);
+
+    if (navButton) {
+      navButton.hidden = !isQuizAdmin;
+    }
+
+    return isQuizAdmin;
+
+  } catch (error) {
+    console.error("Lỗi kiểm tra quản trị viên:", error);
+    return false;
+  }
+}
+
+async function loadPendingQuizzes() {
+  const area = document.getElementById("pendingQuizList");
+  if (!area) return;
+
+  area.textContent = "Đang tải quiz chờ duyệt...";
+
+  if (!db || !currentUser) {
+    area.textContent = "Vui lòng đăng nhập.";
+    return;
+  }
+
+  try {
+    const { data: quizzes, error } = await db.rpc(
+      "get_pending_quizzes"
+    );
+
+    if (error) throw error;
+
+    area.replaceChildren();
+
+    if (!quizzes?.length) {
+      area.textContent =
+        "Hiện không có quiz nào đang chờ duyệt.";
+      return;
+    }
+
+    quizzes.forEach(quiz => {
+      const card = document.createElement("div");
+      card.className = "quiz-card admin-quiz-card";
+
+      const title = document.createElement("h3");
+      title.textContent = quiz.title || "Quiz";
+
+      const description = document.createElement("p");
+      description.textContent =
+        quiz.description || "Không có mô tả.";
+
+      const count = document.createElement("p");
+      count.textContent =
+        "Số câu hỏi: " + quiz.question_count;
+
+      const date = document.createElement("p");
+      date.textContent =
+        "Ngày gửi: " +
+        new Date(quiz.created_at).toLocaleString("vi-VN");
+
+      const buttons = document.createElement("div");
+      buttons.className = "quiz-actions";
+
+      const approve = document.createElement("button");
+      approve.type = "button";
+      approve.textContent = "Duyệt";
+      approve.className = "approve-quiz-btn";
+
+      approve.addEventListener("click", () => {
+        reviewQuiz(quiz.id, true);
+      });
+
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.textContent = "Từ chối";
+      reject.className = "reject-quiz-btn";
+
+      reject.addEventListener("click", () => {
+        reviewQuiz(quiz.id, false);
+      });
+
+      buttons.append(approve, reject);
+
+      card.append(
+        title,
+        description,
+        count,
+        date,
+        buttons
+      );
+
+      area.appendChild(card);
+    });
+
+  } catch (error) {
+    console.error("Lỗi tải quiz chờ duyệt:", error);
+    area.textContent =
+      "Không tải được danh sách: " + error.message;
+  }
+}
+
+async function reviewQuiz(quizId, approve) {
+  if (!db || !currentUser) {
+    alert("Vui lòng đăng nhập.");
+    return;
+  }
+
+  const action = approve ? "duyệt" : "từ chối";
+
+  if (!confirm(`Bạn có chắc muốn ${action} quiz này?`)) {
+    return;
+  }
+
+  try {
+    const { error } = await db.rpc(
+      "review_public_quiz",
+      {
+        p_quiz_id: quizId,
+        p_approve: approve
+      }
+    );
+
+    if (error) throw error;
+
+    alert(
+      approve
+        ? "Đã duyệt và xuất bản quiz!"
+        : "Đã từ chối quiz."
+    );
+
+    await loadPendingQuizzes();
+
+  } catch (error) {
+    console.error("Lỗi duyệt quiz:", error);
+    alert("Không thể xử lý quiz: " + error.message);
+  }
+}
 
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("VOCAB QUIZ đang khởi động...");
@@ -1298,10 +1558,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   const connected = connectSupabase();
 
   if (connected) {
+    
     db.auth.onAuthStateChange((event, session) => {
       currentUser = session?.user || null;
-      updateLoginButton();
-    });
+        updateLoginButton();
+
+          setTimeout(() => {
+        checkQuizAdmin();
+  }, 0);
+});
+
 
     await checkUser();
   }
