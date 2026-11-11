@@ -16,6 +16,14 @@
       <button onclick="showPage('home')">Trang chủ</button>
       <button onclick="showPage('create')">Tạo quiz</button>
       <button onclick="showPage('myQuizzes')">Quiz của tôi</button>
+      <button
+  id="adminNavBtn"
+  type="button"
+  onclick="showPage('admin')"
+  hidden
+>
+  Duyệt quiz
+      </button>
       <button onclick="showPage('history')">Lịch sử</button>
       <button id="loginBtn" onclick="loginGoogle()">
         Đăng nhập Google
@@ -78,6 +86,16 @@
   <h3>Danh sách quiz đã tạo</h3>
   <div id="myQuizList"></div>
 </section>
+    
+<section id="admin" class="page" hidden>
+  <h2>Duyệt quiz công khai</h2>
+  <p>Danh sách các quiz đang chờ quản trị viên phê duyệt.</p>
+
+  <div id="pendingQuizList">
+    Đang tải...
+  </div>
+</section>
+
   </main>
 
   <footer>
