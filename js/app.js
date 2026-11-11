@@ -590,12 +590,16 @@ async function finishQuiz() {
     try {
       const { error } = await db
         .from("quiz_attempts")
-        .insert({
-          quiz_id: quiz.id,
-          user_id: currentUser.id,
-          score: correctAnswers,
-          duration_seconds: seconds
-        });
+        
+.insert({
+  quiz_id: quiz.id,
+  user_id: currentUser.id,
+  score: correctAnswers,
+  correct_count: correctAnswers,
+  total_questions: activeQuestions.length,
+  duration_seconds: seconds
+});
+
 
       if (error) throw error;
 
@@ -1287,60 +1291,85 @@ async function editQuiz(quizId) {
 // =====================================
 
 
+
 async function showHistory() {
   const area = document.getElementById("historyList");
   if (!area) return;
 
-  area.replaceChildren();
-
   if (!currentUser) {
-    area.textContent =
-      "Vui lòng đăng nhập Google để xem lịch sử.";
+    area.textContent = "Vui lòng đăng nhập để xem lịch sử.";
     return;
   }
 
-  if (!db) {
-    area.textContent = "Chưa kết nối Supabase.";
-    return;
-  }
-
-  area.textContent = "Đang tải lịch sử làm bài...";
+  area.textContent = "Đang tải lịch sử...";
 
   try {
-    const { data: attempts, error } = await db
+    const { data, error } = await db
       .from("quiz_attempts")
       .select(
-        "quiz_id,score,duration_seconds,created_at"
+        "quiz_id,score,correct_count,total_questions,duration_seconds,created_at"
       )
       .eq("user_id", currentUser.id)
-      .order("created_at", { ascending: false })
-      .limit(100);
+      .order("created_at", { ascending: false });
 
     if (error) throw error;
 
     area.replaceChildren();
 
-    if (!attempts?.length) {
-      area.textContent =
-        "Bạn chưa có lượt làm bài nào được lưu.";
+    if (!data || data.length === 0) {
+      area.textContent = "Bạn chưa có lịch sử làm bài.";
       return;
     }
 
-    const quizIds = [
-      ...new Set(attempts.map(a => a.quiz_id))
-    ];
+    const quizIds = [...new Set(data.map(a => a.quiz_id))];
 
     const { data: quizzes, error: quizError } = await db
       .from("quizzes")
-      .select("id,title,question_count")
+      .select("id,title")
       .in("id", quizIds);
 
-    if (quizError) {
-      console.warn(
-        "Không lấy đủ thông tin quiz:",
-        quizError
-      );
-    }
+    if (quizError) throw quizError;
+
+    const quizMap = new Map(
+      (quizzes || []).map(q => [q.id, q.title])
+    );
+
+    data.forEach(attempt => {
+      const card = document.createElement("div");
+      card.className = "quiz-card";
+
+      const title = document.createElement("h3");
+      title.textContent =
+        quizMap.get(attempt.quiz_id) || "Quiz đã xóa";
+
+      const result = document.createElement("p");
+      const correct = attempt.correct_count ?? attempt.score;
+
+      result.textContent = attempt.total_questions
+        ? `Kết quả: ${correct}/${attempt.total_questions} câu đúng`
+        : `Số câu đúng: ${correct}`;
+
+      const duration = document.createElement("p");
+      duration.textContent =
+        "Thời gian: " +
+        formatDuration(attempt.duration_seconds || 0);
+
+      const date = document.createElement("p");
+      date.textContent =
+        "Ngày làm: " +
+        new Date(attempt.created_at).toLocaleString("vi-VN");
+
+      card.append(title, result, duration, date);
+      area.appendChild(card);
+    });
+
+  } catch (error) {
+    console.error("Lỗi lịch sử:", error);
+    area.textContent =
+      "Không tải được lịch sử: " + error.message;
+  }
+}
+
 
     const quizMap = new Map(
       (quizzes || []).map(q => [q.id, q])
@@ -1356,10 +1385,16 @@ async function showHistory() {
       title.textContent =
         quiz?.title || "Quiz không còn khả dụng";
 
-      const score = document.createElement("p");
-      score.textContent = quiz?.question_count
-        ? `Điểm: ${attempt.score}/${quiz.question_count}`
-        : `Số câu đúng: ${attempt.score}`;
+      
+const score = document.createElement("p");
+
+const correct = attempt.correct_count ?? attempt.score;
+const total = attempt.total_questions;
+
+score.textContent = total
+  ? `Kết quả: ${correct}/${total} câu đúng`
+  : `Số câu đúng: ${correct}`;
+
 
       const duration = document.createElement("p");
       duration.textContent =
