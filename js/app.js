@@ -1132,6 +1132,14 @@ async function loadMyQuizzes() {
         "Làm thử",
         () => startQuiz(quiz.id)
       );
+      
+      const deleteButton = makeButton(
+        "Xóa",
+        () => deleteQuiz(quiz.id, quiz.title)
+      );
+
+    deleteButton.classList.add("delete-quiz-btn");
+
 
       card.append(
         title,
@@ -1140,7 +1148,8 @@ async function loadMyQuizzes() {
         status,
         count,
         editButton,
-        playButton
+        playButton,
+        deleteButton
       );
 
       area.appendChild(card);
@@ -1156,6 +1165,36 @@ async function loadMyQuizzes() {
 // =====================================
 // 16. MO QUIZ DE CHINH SUA
 // =====================================
+
+async function deleteQuiz(quizId, quizTitle) {
+  if (!db || !currentUser) {
+    alert("Vui lòng đăng nhập Google.");
+    return;
+  }
+
+  const confirmed = confirm(
+    `Bạn có chắc muốn xóa quiz "${quizTitle}"?\n` +
+    "Thao tác này không thể hoàn tác."
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const { error } = await db.rpc(
+      "delete_my_quiz",
+      { p_quiz_id: quizId }
+    );
+
+    if (error) throw error;
+
+    alert("Đã xóa quiz thành công!");
+    await loadMyQuizzes();
+
+  } catch (error) {
+    console.error("Lỗi xóa quiz:", error);
+    alert("Không thể xóa quiz: " + error.message);
+  }
+}
 
 async function editQuiz(quizId) {
   if (!db || !currentUser) {
