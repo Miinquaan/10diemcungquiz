@@ -32,13 +32,23 @@
     </section>
     <section id="teacher" class="page" hidden>
       <h2>Giao bài tập</h2><p>Chọn quiz công khai và lớp nhận bài.</p>
+      <label for="teacherClassPicker">Vào lớp để tạo quiz</label><select id="teacherClassPicker"></select>
+      <button type="button" id="teacherClassCreate">Chọn môn và tạo quiz cho lớp</button>
       <form id="assignmentForm" class="quiz-form">
         <label for="assignmentTitle">Tên bài tập</label><input id="assignmentTitle" maxlength="150" required>
         <label for="assignmentQuiz">Quiz công khai</label><select id="assignmentQuiz" required></select>
         <label for="assignmentClass">Lớp nhận bài</label><select id="assignmentClass" required></select>
         <label for="assignmentDue">Hạn nộp (không bắt buộc)</label><input type="datetime-local" id="assignmentDue">
+        <label><input type="checkbox" id="assignmentRequireNumber"> Yêu cầu học sinh nhập số thứ tự</label>
         <button type="submit">Giao bài</button><p id="assignmentMessage" aria-live="polite"></p>
       </form><h3>Bài đã giao</h3><div id="teacherAssignments" class="card-list"></div>
+    </section>
+    <section id="teacherResults" class="page" hidden>
+      <button type="button" class="back-link" onclick="showPage('teacher')">← Bài đã giao</button>
+      <h2 id="teacherResultsTitle">Bảng xếp hạng</h2><p id="teacherResultsCount"></p>
+      <label for="teacherResultsSearch">Tìm học sinh</label><input type="search" id="teacherResultsSearch" placeholder="Nhập tên học sinh">
+      <label for="teacherResultsSort">Sắp xếp</label><select id="teacherResultsSort"><option value="score">Điểm cao nhất</option><option value="name">Tên</option><option value="number">Số thứ tự</option></select>
+      <div id="teacherResultsList" class="card-list"></div>
     </section>
     <section id="teacherAdmin" class="page" hidden>
       <h2>Cấp quyền giáo viên</h2><p>Nhập mã tài khoản của giáo viên đã đăng nhập web.</p>

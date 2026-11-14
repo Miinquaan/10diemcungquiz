@@ -54,6 +54,8 @@ let currentUser = null;
 let currentProfile = null;
 let isTeacher = false;
 let isQuizAdmin = false;
+let activeAssignment = null;
+let teacherResults = [];
 let creatingQuiz = false;
 let selectedBlock = "";
 let selectedGrade = "";
@@ -1518,7 +1520,21 @@ function makeQuestions(words, quiz) {
   });
 }
 
-async function startQuiz(quizId) {
+async function startQuiz(quizId, assignment = null) {
+  activeAssignment = null;
+  if (assignment) {
+    if (!currentUser) { alert("Hãy đăng nhập để làm bài tập."); return; }
+    let studentNumber = null;
+    if (assignment.require_student_number) {
+      const value = prompt("Nhập số thứ tự của bạn trong lớp (1–999):");
+      if (value === null) return;
+      if (!/^\d+$/.test(value.trim()) || Number(value) < 1 || Number(value) > 999) {
+        alert("Số thứ tự phải là số nguyên từ 1 đến 999."); return;
+      }
+      studentNumber = Number(value);
+    }
+    activeAssignment = { id: assignment.id, studentNumber };
+  }
   showPage("play");
   document.getElementById("questionArea").textContent = "Đang tải câu hỏi...";
 
@@ -1797,6 +1813,8 @@ async function finishQuiz() {
     const { error } = await db.from("quiz_attempts").insert({
       quiz_id: activeQuiz.id,
       user_id: currentUser.id,
+      assignment_id: activeAssignment?.id || null,
+      student_number: activeAssignment?.studentNumber || null,
       score: correctAnswers,
       correct_count: correctAnswers,
       wrong_count: activeQuestions.length - correctAnswers,
@@ -1860,6 +1878,9 @@ async function renderTeacher() {
   const classes = document.getElementById("assignmentClass");
   classes.replaceChildren(new Option("Chọn lớp", ""));
   catalogClasses.forEach(item => classes.add(new Option(item.name || item.code, item.code)));
+  const picker = document.getElementById("teacherClassPicker");
+  picker.replaceChildren(new Option("Chọn lớp", ""));
+  catalogClasses.forEach(item => picker.add(new Option(item.name || item.code, item.code)));
   const quizzes = document.getElementById("assignmentQuiz");
   quizzes.replaceChildren(new Option("Đang tải quiz...", ""));
   const { data, error } = await db.from("quizzes").select("id,title,subject,class_code")
@@ -1867,7 +1888,7 @@ async function renderTeacher() {
   quizzes.replaceChildren(new Option("Chọn quiz", ""));
   if (error) document.getElementById("assignmentMessage").textContent = error.message;
   else (data || []).forEach(q => quizzes.add(new Option(`${q.title} • ${q.class_code || "Chung"}`, q.id)));
-  const result = await db.from("quiz_assignments").select("id,title,class_code,due_at,quiz_id")
+  const result = await db.from("quiz_assignments").select("id,title,class_code,due_at,quiz_id,require_student_number")
     .eq("teacher_id", currentUser.id).order("created_at", { ascending: false });
   renderAssignmentCards(document.getElementById("teacherAssignments"), result, false);
 }
@@ -1882,7 +1903,8 @@ function renderAssignmentCards(area, result, playable) {
     const info = document.createElement("p");
     info.textContent = `Lớp ${item.class_code} • ${item.due_at ? `Hạn: ${new Date(item.due_at).toLocaleString("vi-VN")}` : "Không có hạn"}`;
     card.append(title, info);
-    if (playable) card.appendChild(makeButton("Làm bài", () => startQuiz(item.quiz_id)));
+    if (playable) card.appendChild(makeButton("Làm bài", () => startQuiz(item.quiz_id, item)));
+    else card.appendChild(makeButton("Xem bảng xếp hạng", () => showTeacherResults(item)));
     area.appendChild(card);
   });
 }
@@ -1891,9 +1913,40 @@ async function renderHomework() {
   const area = document.getElementById("homeworkList");
   if (!currentUser || !selectedGrade) { area.textContent = "Hãy đăng nhập và chọn lớp."; return; }
   area.textContent = "Đang tải bài tập...";
-  const result = await db.from("quiz_assignments").select("id,title,class_code,due_at,quiz_id")
+  const result = await db.from("quiz_assignments").select("id,title,class_code,due_at,quiz_id,require_student_number")
     .eq("class_code", selectedGrade).order("created_at", { ascending: false });
   renderAssignmentCards(area, result, true);
+}
+
+async function showTeacherResults(assignment) {
+  showPage("teacherResults");
+  document.getElementById("teacherResultsTitle").textContent = `Bảng xếp hạng: ${assignment.title} • ${assignment.class_code}`;
+  document.getElementById("teacherResultsList").textContent = "Đang tải kết quả...";
+  const { data, error } = await db.rpc("teacher_assignment_results", { p_assignment_id: assignment.id });
+  if (error) { document.getElementById("teacherResultsList").textContent = `Không tải được kết quả: ${error.message}`; return; }
+  teacherResults = data || [];
+  document.getElementById("teacherResultsSearch").value = "";
+  document.getElementById("teacherResultsSort").value = "score";
+  drawTeacherResults();
+}
+
+function drawTeacherResults() {
+  const search = document.getElementById("teacherResultsSearch").value.trim().toLocaleLowerCase("vi");
+  const sort = document.getElementById("teacherResultsSort").value;
+  const area = document.getElementById("teacherResultsList");
+  document.getElementById("teacherResultsCount").textContent = `${teacherResults.length} học sinh đã làm • mỗi học sinh tính một lần, lấy kết quả cao nhất.`;
+  const filtered = teacherResults.filter(row => (row.display_name || "").toLocaleLowerCase("vi").includes(search));
+  filtered.sort((a, b) => sort === "name" ? (a.display_name || "").localeCompare(b.display_name || "", "vi") :
+    sort === "number" ? (a.student_number ?? Infinity) - (b.student_number ?? Infinity) || (a.display_name || "").localeCompare(b.display_name || "", "vi") :
+    b.score - a.score || a.duration_seconds - b.duration_seconds);
+  area.replaceChildren();
+  if (!filtered.length) { area.textContent = "Không có học sinh đã làm phù hợp."; return; }
+  filtered.forEach((row, index) => {
+    const card = document.createElement("article"); card.className = "quiz-card";
+    const title = document.createElement("h3"); title.textContent = `${sort === "score" ? `${index + 1}. ` : ""}${row.display_name || "Chưa có tên"}`;
+    const info = document.createElement("p"); info.textContent = `STT: ${row.student_number ?? "—"} • ${row.correct_count}/${row.total_questions} câu đúng • ${formatDuration(row.duration_seconds)}`;
+    card.append(title, info); area.appendChild(card);
+  });
 }
 
 async function submitAssignment(event) {
@@ -1904,7 +1957,8 @@ async function submitAssignment(event) {
     teacher_id: currentUser.id, title: document.getElementById("assignmentTitle").value.trim(),
     quiz_id: document.getElementById("assignmentQuiz").value,
     class_code: document.getElementById("assignmentClass").value,
-    due_at: due ? new Date(due).toISOString() : null
+    due_at: due ? new Date(due).toISOString() : null,
+    require_student_number: document.getElementById("assignmentRequireNumber").checked
   });
   if (error) { message.textContent = `Không giao được bài: ${error.message}`; return; }
   event.target.reset();
@@ -1934,5 +1988,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("profileForm").addEventListener("submit", saveProfile);
   document.getElementById("assignmentForm").addEventListener("submit", submitAssignment);
   document.getElementById("teacherGrantForm").addEventListener("submit", grantTeacher);
+  document.getElementById("teacherResultsSearch").addEventListener("input", drawTeacherResults);
+  document.getElementById("teacherResultsSort").addEventListener("change", drawTeacherResults);
+  document.getElementById("teacherClassCreate").addEventListener("click", () => {
+    const classCode = document.getElementById("teacherClassPicker").value;
+    if (!isTeacher || !classCode) { alert("Hãy chọn lớp."); return; }
+    selectedGrade = classCode;
+    openCreate();
+  });
   showPage(currentUser ? (selectedGrade ? "subjects" : "profile") : "home");
 });
