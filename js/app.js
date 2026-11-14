@@ -8,12 +8,12 @@ const BLOCKS = ["10", "11", "12"];
 const CLASSES_PER_BLOCK = 12;
 const SUBJECTS = [
   { id: "english", name: "Tiếng Anh", icon: "Aa", ready: true },
-  { id: "biology", name: "Sinh", icon: "🧬", ready: false },
-  { id: "informatics", name: "Tin", icon: "⌨", ready: false },
-  { id: "history", name: "Sử", icon: "⌛", ready: false },
-  { id: "physics", name: "Lý", icon: "⚛", ready: false },
-  { id: "chemistry", name: "Hóa", icon: "⚗", ready: false },
-  { id: "economics-law", name: "KT-PL", icon: "⚖", ready: false }
+  { id: "biology", name: "Sinh", icon: "🧬", ready: true },
+  { id: "informatics", name: "Tin", icon: "⌨", ready: true },
+  { id: "history", name: "Sử", icon: "⌛", ready: true },
+  { id: "physics", name: "Lý", icon: "⚛", ready: true },
+  { id: "chemistry", name: "Hóa", icon: "⚗", ready: true },
+  { id: "economics-law", name: "KT-PL", icon: "⚖", ready: true }
 ];
 
 let db = null;
@@ -21,6 +21,10 @@ let currentUser = null;
 let selectedBlock = "";
 let selectedGrade = "";
 let selectedSubject = "";
+let selectedSectionId = "";
+let selectedSectionTitle = "";
+let catalogClasses = [];
+let catalogSubjects = [];
 let scannedVocabulary = [];
 let scannedDocumentTitle = "";
 let activeQuiz = null;
@@ -44,20 +48,49 @@ function showPage(pageId) {
   if (pageId === "home") renderBlocks();
   if (pageId === "classes") renderClasses();
   if (pageId === "subjects") renderSubjects();
+  if (pageId === "sections") renderSections();
   if (pageId === "library") loadQuizzes();
   if (pageId === "create") renderCreateForm();
   if (pageId === "myQuizzes") loadMyQuizzes();
 }
 
-function renderBlocks() {
+async function loadCatalog() {
+  if (!db) return;
+
+  try {
+    const [classesResult, subjectsResult] = await Promise.all([
+      db.from("classes").select("code,block,name").eq("is_active", true)
+        .order("block").order("code"),
+      db.from("subjects").select("code,name").eq("is_active", true)
+        .order("name")
+    ]);
+
+    if (classesResult.error) throw classesResult.error;
+    if (subjectsResult.error) throw subjectsResult.error;
+
+    catalogClasses = classesResult.data || [];
+    catalogSubjects = subjectsResult.data || [];
+  } catch (error) {
+    console.warn("Không tải được catalog lớp và môn:", error.message);
+  }
+}
+
+async function renderBlocks() {
+  await loadCatalog();
   const area = document.getElementById("blockList");
   area.replaceChildren();
 
-  BLOCKS.forEach(block => {
+  const blocks = catalogClasses.length
+    ? [...new Set(catalogClasses.map(item => String(item.block)))]
+    : BLOCKS;
+
+  blocks.forEach(block => {
     const button = makeButton(`Khối ${block}`, () => {
       selectedBlock = block;
       selectedGrade = "";
       selectedSubject = "";
+      selectedSectionId = "";
+      selectedSectionTitle = "";
       showPage("classes");
     });
     button.className = "selection-card";
@@ -65,11 +98,13 @@ function renderBlocks() {
   });
 }
 
-function renderClasses() {
+async function renderClasses() {
   if (!selectedBlock) {
     showPage("home");
     return;
   }
+
+  await loadCatalog();
 
   document.getElementById("classHeading").textContent =
     `Chọn lớp khối ${selectedBlock}`;
@@ -77,12 +112,19 @@ function renderClasses() {
   const area = document.getElementById("classList");
   area.replaceChildren();
 
-  Array.from({ length: CLASSES_PER_BLOCK }, (_value, index) =>
-    `${selectedBlock}A${index + 1}`
-  ).forEach(className => {
+  const classes = catalogClasses.length
+    ? catalogClasses.filter(item => String(item.block) === selectedBlock)
+    : Array.from({ length: CLASSES_PER_BLOCK }, (_value, index) => ({
+      code: `${selectedBlock}A${index + 1}`
+    }));
+
+  classes.forEach(classItem => {
+    const className = classItem.code;
     const button = makeButton(className, () => {
       selectedGrade = className;
       selectedSubject = "";
+      selectedSectionId = "";
+      selectedSectionTitle = "";
       showPage("subjects");
     });
     button.className = "selection-card";
@@ -90,40 +132,95 @@ function renderClasses() {
   });
 }
 
-function renderSubjects() {
+async function renderSubjects() {
   if (!selectedGrade) {
     showPage("classes");
     return;
   }
 
+  await loadCatalog();
+
   document.getElementById("subjectHeading").textContent =
     `Lớp ${selectedGrade}: chọn môn học`;
   document.getElementById("subjectIntro").textContent =
-    "Tiếng Anh đã hỗ trợ tạo quiz từ tệp đề cương Word. Các môn khác sẽ mở khi có mẫu đề cương tương ứng.";
+    "Mỗi môn có các phần học riêng, ví dụ Unit cho Tiếng Anh.";
 
   const area = document.getElementById("subjectList");
   area.replaceChildren();
 
-  SUBJECTS.forEach(subject => {
+  const subjects = catalogSubjects.length
+    ? catalogSubjects.map(subject => ({
+      id: subject.code,
+      name: subject.name,
+      icon: SUBJECTS.find(item => item.id === subject.code)?.icon || "•",
+      ready: true
+    }))
+    : SUBJECTS;
+
+  subjects.forEach(subject => {
     const button = makeButton(`${subject.icon}\n${subject.name}`, () => {
-      if (!subject.ready) return;
       selectedSubject = subject.id;
-      showPage("library");
+      selectedSectionId = "";
+      selectedSectionTitle = "";
+      showPage("sections");
     });
 
     button.className = "selection-card subject-card";
-    button.disabled = !subject.ready;
-    if (!subject.ready) {
-      button.title = "Đang xây dựng mẫu đề cương cho môn này";
-    }
-
     area.appendChild(button);
   });
 }
 
-function openCreate() {
+async function renderSections() {
   if (!selectedGrade || !selectedSubject) {
-    alert("Hãy chọn lớp và môn học trước khi tạo quiz.");
+    showPage(selectedGrade ? "subjects" : "classes");
+    return;
+  }
+
+  const area = document.getElementById("sectionList");
+  const heading = document.getElementById("sectionHeading");
+  const intro = document.getElementById("sectionIntro");
+  heading.textContent = `${selectedGrade} - ${subjectName()}: chọn phần học`;
+  intro.textContent = "Chỉ quiz thuộc phần học này mới được hiển thị.";
+  area.textContent = "Đang tải phần học...";
+
+  if (!db) {
+    area.textContent = "Chưa kết nối được danh mục phần học.";
+    return;
+  }
+
+  try {
+    const { data, error } = await db.from("course_sections")
+      .select("id,title,sort_order")
+      .eq("class_code", selectedGrade)
+      .eq("subject", selectedSubject)
+      .eq("is_active", true)
+      .order("sort_order");
+
+    if (error) throw error;
+    area.replaceChildren();
+
+    if (!data?.length) {
+      area.textContent = "Chưa có phần học cho lớp và môn này.";
+      return;
+    }
+
+    data.forEach(section => {
+      const button = makeButton(section.title, () => {
+        selectedSectionId = section.id;
+        selectedSectionTitle = section.title;
+        showPage("library");
+      });
+      button.className = "selection-card";
+      area.appendChild(button);
+    });
+  } catch (error) {
+    area.textContent = `Không tải được phần học: ${error.message}`;
+  }
+}
+
+function openCreate() {
+  if (!selectedGrade || !selectedSubject || !selectedSectionId) {
+    alert("Hãy chọn lớp, môn học và phần học trước khi tạo quiz.");
     showPage("home");
     return;
   }
@@ -221,8 +318,8 @@ async function loadQuizzes() {
   const intro = document.getElementById("libraryIntro");
   const area = document.getElementById("quizList");
 
-  heading.textContent = `Kho quiz ${subjectName()} - Lớp ${selectedGrade}`;
-  intro.textContent = "Chọn một quiz để bắt đầu làm bài.";
+  heading.textContent = `Kho quiz ${subjectName()} - ${selectedGrade} - ${selectedSectionTitle}`;
+  intro.textContent = "Chỉ hiển thị quiz của đúng lớp, môn và phần học đã chọn.";
   area.textContent = "Đang tải danh sách quiz...";
 
   if (!db) {
@@ -237,15 +334,13 @@ async function loadQuizzes() {
       .eq("visibility", "public")
       .eq("status", "published")
       .eq("subject", selectedSubject)
+      .eq("class_code", selectedGrade)
+      .eq("section_id", selectedSectionId)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
 
-    const gradeMark = `[Lớp ${selectedGrade}]`;
-    const quizzes = (data || []).filter(quiz =>
-      !quiz.description?.startsWith("[Lớp") ||
-      quiz.description.startsWith(gradeMark)
-    );
+    const quizzes = data || [];
 
     area.replaceChildren();
 
@@ -262,8 +357,7 @@ async function loadQuizzes() {
       title.textContent = quiz.title;
 
       const description = document.createElement("p");
-      description.textContent = (quiz.description || "")
-        .replace(/^\[Lớp \d+\]\s*/, "");
+      description.textContent = quiz.description || "";
 
       const count = document.createElement("p");
       count.textContent = `${quiz.question_count} câu hỏi`;
@@ -286,7 +380,7 @@ function renderCreateForm() {
   const area = document.getElementById("createQuizForm");
 
   document.getElementById("createContext").textContent =
-    `Lớp ${selectedGrade} • ${subjectName()} • Tải tệp .docx có bảng từ vựng theo mẫu.`;
+    `Lớp ${selectedGrade} • ${subjectName()} • ${selectedSectionTitle} • Tải tệp .docx có bảng từ vựng theo mẫu.`;
 
   area.innerHTML = `
     <form id="newQuizForm" class="quiz-form">
@@ -585,8 +679,10 @@ async function saveNewQuiz(event) {
       .insert({
         owner_id: currentUser.id,
         title,
-        description: `[Lớp ${selectedGrade}] ${scannedDocumentTitle}`,
+        description: scannedDocumentTitle,
         subject: selectedSubject,
+        class_code: selectedGrade,
+        section_id: selectedSectionId,
         visibility,
         status: visibility === "public" ? "pending" : "published",
         question_count: count,

@@ -44,15 +44,22 @@
       <div id="subjectList" class="selection-grid"></div>
     </section>
 
-    <section id="library" class="page" hidden>
+    <section id="sections" class="page" hidden>
       <button type="button" class="back-link" onclick="showPage('subjects')">← Đổi môn</button>
+      <h2 id="sectionHeading">Chọn phần học</h2>
+      <p id="sectionIntro"></p>
+      <div id="sectionList" class="selection-grid"></div>
+    </section>
+
+    <section id="library" class="page" hidden>
+      <button type="button" class="back-link" onclick="showPage('sections')">← Đổi phần học</button>
       <h2 id="libraryHeading">Kho quiz</h2>
       <p id="libraryIntro"></p>
       <div id="quizList" class="card-list"></div>
     </section>
 
     <section id="create" class="page" hidden>
-      <button type="button" class="back-link" onclick="showPage('subjects')">← Đổi môn</button>
+      <button type="button" class="back-link" onclick="showPage('sections')">← Đổi phần học</button>
       <h2>Tạo quiz từ đề cương</h2>
       <p id="createContext">Chọn lớp và môn trước khi tạo quiz.</p>
       <div id="createQuizForm"></div>
