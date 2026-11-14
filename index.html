@@ -13,7 +13,7 @@
   <header class="site-header">
     <div>
       <h1>QUIZ HỌC TẬP</h1>
-      <p class="tagline">Chọn lớp, chọn môn, học từ đề cương</p>
+      <p class="tagline">Chọn khối, chọn lớp, chọn môn, học từ đề cương</p>
     </div>
     <nav aria-label="Điều hướng chính">
       <button type="button" onclick="showPage('home')">Trang chủ</button>
@@ -25,15 +25,20 @@
 
   <main>
     <section id="home" class="page">
-      <p class="eyebrow">Bước 1</p>
-      <h2>Chọn lớp học</h2>
-      <p>Chọn lớp trước, sau đó chọn môn để học hoặc tạo quiz.</p>
-      <div id="gradeList" class="selection-grid"></div>
+      <h2>Chọn khối</h2>
+      <p>Chọn khối 10, 11 hoặc 12 trước khi chọn lớp và môn học.</p>
+      <div id="blockList" class="selection-grid"></div>
+    </section>
+
+    <section id="classes" class="page" hidden>
+      <button type="button" class="back-link" onclick="showPage('home')">← Đổi khối</button>
+      <h2 id="classHeading">Chọn lớp</h2>
+      <p>Chọn đúng lớp của bạn để xem và tạo quiz.</p>
+      <div id="classList" class="selection-grid"></div>
     </section>
 
     <section id="subjects" class="page" hidden>
-      <button type="button" class="back-link" onclick="showPage('home')">← Đổi lớp</button>
-      <p class="eyebrow">Bước 2</p>
+      <button type="button" class="back-link" onclick="showPage('classes')">← Đổi lớp</button>
       <h2 id="subjectHeading">Chọn môn học</h2>
       <p id="subjectIntro"></p>
       <div id="subjectList" class="selection-grid"></div>

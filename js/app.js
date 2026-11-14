@@ -4,17 +4,21 @@ const SUPABASE_URL = "https://tdekbojbfnttitllfltl.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_GnRVaCZsV43UDnJHNon9ng_GSvUe6YT";
 const WEBSITE_URL = "https://miinquaan.github.io/10diemcungquiz/";
 
-const GRADES = ["6", "7", "8", "9", "10", "11", "12"];
+const BLOCKS = ["10", "11", "12"];
+const CLASSES_PER_BLOCK = 12;
 const SUBJECTS = [
   { id: "english", name: "Tiếng Anh", icon: "Aa", ready: true },
-  { id: "math", name: "Toán", icon: "∑", ready: false },
-  { id: "literature", name: "Ngữ văn", icon: "V", ready: false },
-  { id: "science", name: "Khoa học tự nhiên", icon: "⚗", ready: false },
-  { id: "history", name: "Lịch sử", icon: "⌛", ready: false }
+  { id: "biology", name: "Sinh", icon: "🧬", ready: false },
+  { id: "informatics", name: "Tin", icon: "⌨", ready: false },
+  { id: "history", name: "Sử", icon: "⌛", ready: false },
+  { id: "physics", name: "Lý", icon: "⚛", ready: false },
+  { id: "chemistry", name: "Hóa", icon: "⚗", ready: false },
+  { id: "economics-law", name: "KT-PL", icon: "⚖", ready: false }
 ];
 
 let db = null;
 let currentUser = null;
+let selectedBlock = "";
 let selectedGrade = "";
 let selectedSubject = "";
 let scannedVocabulary = [];
@@ -37,20 +41,47 @@ function showPage(pageId) {
     page.hidden = page.id !== pageId;
   });
 
-  if (pageId === "home") renderGrades();
+  if (pageId === "home") renderBlocks();
+  if (pageId === "classes") renderClasses();
   if (pageId === "subjects") renderSubjects();
   if (pageId === "library") loadQuizzes();
   if (pageId === "create") renderCreateForm();
   if (pageId === "myQuizzes") loadMyQuizzes();
 }
 
-function renderGrades() {
-  const area = document.getElementById("gradeList");
+function renderBlocks() {
+  const area = document.getElementById("blockList");
   area.replaceChildren();
 
-  GRADES.forEach(grade => {
-    const button = makeButton(`Lớp ${grade}`, () => {
-      selectedGrade = grade;
+  BLOCKS.forEach(block => {
+    const button = makeButton(`Khối ${block}`, () => {
+      selectedBlock = block;
+      selectedGrade = "";
+      selectedSubject = "";
+      showPage("classes");
+    });
+    button.className = "selection-card";
+    area.appendChild(button);
+  });
+}
+
+function renderClasses() {
+  if (!selectedBlock) {
+    showPage("home");
+    return;
+  }
+
+  document.getElementById("classHeading").textContent =
+    `Chọn lớp khối ${selectedBlock}`;
+
+  const area = document.getElementById("classList");
+  area.replaceChildren();
+
+  Array.from({ length: CLASSES_PER_BLOCK }, (_value, index) =>
+    `${selectedBlock}A${index + 1}`
+  ).forEach(className => {
+    const button = makeButton(className, () => {
+      selectedGrade = className;
       selectedSubject = "";
       showPage("subjects");
     });
@@ -61,14 +92,14 @@ function renderGrades() {
 
 function renderSubjects() {
   if (!selectedGrade) {
-    showPage("home");
+    showPage("classes");
     return;
   }
 
   document.getElementById("subjectHeading").textContent =
     `Lớp ${selectedGrade}: chọn môn học`;
   document.getElementById("subjectIntro").textContent =
-    "Tiếng Anh đã hỗ trợ tạo quiz từ tệp đề cương Word.";
+    "Tiếng Anh đã hỗ trợ tạo quiz từ tệp đề cương Word. Các môn khác sẽ mở khi có mẫu đề cương tương ứng.";
 
   const area = document.getElementById("subjectList");
   area.replaceChildren();
