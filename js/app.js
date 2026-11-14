@@ -20,6 +20,8 @@ const SUBJECTS = [
 
 let db = null;
 let currentUser = null;
+let currentProfile = null;
+let creatingQuiz = false;
 let selectedBlock = "";
 let selectedGrade = "";
 let selectedSubject = "";
@@ -42,6 +44,8 @@ let previewMode = false;
 let metafileRendererPromise = null;
 
 function showPage(pageId) {
+  if (pageId === "home" && currentUser && selectedGrade) pageId = "subjects";
+  if (currentUser && !selectedGrade && !["profile", "home"].includes(pageId)) pageId = "profile";
   const target = document.getElementById(pageId);
   if (!target) return;
   if (pageId !== "play") stopTimer();
@@ -50,7 +54,7 @@ function showPage(pageId) {
     page.hidden = page.id !== pageId;
   });
 
-  if (pageId === "home") renderBlocks();
+  if (pageId === "profile") renderProfile();
   if (pageId === "classes") renderClasses();
   if (pageId === "subjects") renderSubjects();
   if (pageId === "sections") renderSections();
@@ -139,7 +143,7 @@ async function renderClasses() {
 
 async function renderSubjects() {
   if (!selectedGrade) {
-    showPage("classes");
+    showPage(currentUser ? "profile" : "home");
     return;
   }
 
@@ -148,7 +152,7 @@ async function renderSubjects() {
   document.getElementById("subjectHeading").textContent =
     `Lớp ${selectedGrade}: chọn môn học`;
   document.getElementById("subjectIntro").textContent =
-    "Mỗi môn có các phần học riêng, ví dụ Unit cho Tiếng Anh.";
+    creatingQuiz ? "Chọn môn để tạo quiz." : "Chọn môn học để xem quiz.";
 
   const area = document.getElementById("subjectList");
   area.replaceChildren();
@@ -213,7 +217,13 @@ async function renderSections() {
       const button = makeButton(section.title, () => {
         selectedSectionId = section.id;
         selectedSectionTitle = section.title;
-        showPage("library");
+        if (creatingQuiz) {
+          if (!["english", "biology"].includes(selectedSubject)) {
+            alert("Môn này chưa có mẫu đề cương để tạo quiz.");
+            return;
+          }
+          showPage("create");
+        } else showPage("library");
       });
       button.className = "selection-card";
       area.appendChild(button);
@@ -224,18 +234,10 @@ async function renderSections() {
 }
 
 function openCreate() {
-  if (!selectedGrade || !selectedSubject || !selectedSectionId) {
-    alert("Hãy chọn lớp, môn học và phần học trước khi tạo quiz.");
-    showPage("home");
-    return;
-  }
-
-  if (!["english", "biology"].includes(selectedSubject)) {
-    alert("Môn này chưa có mẫu đề cương để tạo quiz.");
-    return;
-  }
-
-  showPage("create");
+  creatingQuiz = true;
+  selectedSubject = "";
+  selectedSectionId = "";
+  showPage(currentUser ? (selectedGrade ? "subjects" : "profile") : "home");
 }
 
 function connectSupabase() {
@@ -260,7 +262,47 @@ async function checkUser() {
   if (!db) return;
   const { data } = await db.auth.getUser();
   currentUser = data?.user || null;
+  if (currentUser) await loadUserProfile();
   updateLoginButton();
+}
+
+async function loadUserProfile() {
+  await loadCatalog();
+  const { data, error } = await db.from("profiles")
+    .select("display_name,class_name,setup_complete").eq("id", currentUser.id).maybeSingle();
+  if (error) throw error;
+  currentProfile = data;
+  selectedGrade = data?.setup_complete && data.display_name?.trim() && catalogClasses.some(item => item.code === data?.class_name)
+    ? data.class_name : "";
+}
+
+function showProfile() { showPage(currentUser ? "profile" : "home"); }
+
+async function renderProfile() {
+  await loadCatalog();
+  const select = document.getElementById("profileClass");
+  select.replaceChildren(new Option("Chọn lớp", ""));
+  catalogClasses.forEach(item => select.add(new Option(item.name || item.code, item.code)));
+  select.value = selectedGrade;
+  document.getElementById("displayName").value = currentProfile?.setup_complete
+    ? (currentProfile.display_name || "") : "";
+}
+
+async function saveProfile(event) {
+  event.preventDefault();
+  const message = document.getElementById("profileMessage");
+  const displayName = document.getElementById("displayName").value.trim();
+  const className = document.getElementById("profileClass").value;
+  if (!currentUser || !displayName || !catalogClasses.some(item => item.code === className)) {
+    message.textContent = "Hãy nhập tên và chọn lớp hợp lệ.";
+    return;
+  }
+  const { error } = await db.from("profiles").upsert({ id: currentUser.id, display_name: displayName, class_name: className, setup_complete: true });
+  if (error) { message.textContent = `Không lưu được thông tin: ${error.message}`; return; }
+  currentProfile = { display_name: displayName, class_name: className, setup_complete: true };
+  selectedGrade = className;
+  message.textContent = "";
+  showPage("subjects");
 }
 
 function updateLoginButton() {
@@ -278,7 +320,11 @@ async function loginGoogle() {
   if (currentUser) {
     await db.auth.signOut();
     currentUser = null;
+    currentProfile = null;
+    selectedGrade = "";
+    creatingQuiz = false;
     updateLoginButton();
+    showPage("home");
     return;
   }
 
@@ -329,7 +375,7 @@ async function loadQuizzes() {
   const area = document.getElementById("quizList");
 
   heading.textContent = `Kho quiz ${subjectName()} - ${selectedGrade} - ${selectedSectionTitle}`;
-  intro.textContent = "Chỉ hiển thị quiz của đúng lớp, môn và phần học đã chọn.";
+  intro.textContent = "Quiz của lớp và quiz chung cùng khối được hiển thị riêng.";
   area.textContent = "Đang tải danh sách quiz...";
 
   if (!db) {
@@ -338,19 +384,25 @@ async function loadQuizzes() {
   }
 
   try {
+    const { data: sections, error: sectionError } = await db.from("course_sections")
+      .select("id,class_code").eq("subject", selectedSubject).eq("title", selectedSectionTitle)
+      .eq("is_active", true);
+    if (sectionError) throw sectionError;
+    const sameBlock = (sections || []).filter(item => item.class_code.startsWith(selectedGrade.slice(0, 2)));
+    const sectionIds = sameBlock.map(item => item.id);
     const { data, error } = await db
       .from("quizzes")
-      .select("id,title,description,question_count,question_types")
+      .select("id,title,description,question_count,question_types,class_code,share_scope")
       .eq("visibility", "public")
       .eq("status", "published")
       .eq("subject", selectedSubject)
-      .eq("class_code", selectedGrade)
-      .eq("section_id", selectedSectionId)
+      .in("section_id", sectionIds.length ? sectionIds : [selectedSectionId])
       .order("created_at", { ascending: false });
 
     if (error) throw error;
 
-    const quizzes = data || [];
+    const quizzes = (data || []).filter(quiz =>
+      (quiz.class_code === selectedGrade && quiz.share_scope === "class") || quiz.share_scope === "shared");
 
     area.replaceChildren();
 
@@ -359,7 +411,17 @@ async function loadQuizzes() {
       return;
     }
 
-    quizzes.forEach(quiz => {
+    ["class", "shared"].forEach(scope => {
+      const group = quizzes.filter(quiz => quiz.share_scope === scope);
+      const groupHeading = document.createElement("h3");
+      groupHeading.textContent = scope === "class" ? `Quiz lớp ${selectedGrade}` : "Quiz chung";
+      area.appendChild(groupHeading);
+      if (!group.length) {
+        const empty = document.createElement("p");
+        empty.textContent = "Chưa có quiz.";
+        area.appendChild(empty);
+      }
+      group.forEach(quiz => {
       const card = document.createElement("article");
       card.className = "quiz-card";
 
@@ -380,6 +442,7 @@ async function loadQuizzes() {
       );
 
       area.appendChild(card);
+      });
     });
   } catch (error) {
     area.textContent = `Không tải được quiz: ${error.message}`;
@@ -424,7 +487,8 @@ function renderCreateForm() {
       <label for="newQuizVisibility">Chia sẻ</label>
       <select id="newQuizVisibility">
         <option value="private">Riêng tư</option>
-        <option value="public">Công khai</option>
+        <option value="class">Quiz của lớp</option>
+        <option value="shared">Quiz chung</option>
       </select>
 
       <div class="form-actions">
@@ -479,7 +543,8 @@ function renderBiologyCreateForm() {
       <label for="biologyQuizVisibility">Chia sẻ</label>
       <select id="biologyQuizVisibility">
         <option value="private">Riêng tư</option>
-        <option value="public">Công khai</option>
+        <option value="class">Quiz của lớp</option>
+        <option value="shared">Quiz chung</option>
       </select>
 
       <div class="form-actions">
@@ -946,7 +1011,8 @@ async function saveBiologyQuiz(event) {
   try {
     button.disabled = true;
     message.textContent = "Đang lưu quiz...";
-    const visibility = document.getElementById("biologyQuizVisibility").value;
+    const scope = document.getElementById("biologyQuizVisibility").value;
+    const visibility = scope === "private" ? "private" : "public";
     const { data: quiz, error } = await db.from("quizzes").insert({
       owner_id: currentUser.id,
       title,
@@ -955,7 +1021,8 @@ async function saveBiologyQuiz(event) {
       class_code: selectedGrade,
       section_id: selectedSectionId,
       visibility,
-      status: "published",
+      share_scope: scope === "shared" ? "shared" : "class",
+      status: visibility === "private" ? "private" : "published",
       question_count: selectedBiologyLesson.questions.length,
       question_types: ["multiple_choice", "true_false"]
     }).select("id").single();
@@ -1211,7 +1278,8 @@ async function saveNewQuiz(event) {
     button.disabled = true;
     message.textContent = "Đang lưu quiz...";
 
-    const visibility = document.getElementById("newQuizVisibility").value;
+    const scope = document.getElementById("newQuizVisibility").value;
+    const visibility = scope === "private" ? "private" : "public";
     const { data: quiz, error: quizError } = await db
       .from("quizzes")
       .insert({
@@ -1222,7 +1290,8 @@ async function saveNewQuiz(event) {
         class_code: selectedGrade,
         section_id: selectedSectionId,
         visibility,
-        status: "published",
+        share_scope: scope === "shared" ? "shared" : "class",
+        status: visibility === "private" ? "private" : "published",
         question_count: count,
         question_types: types
       })
@@ -1660,9 +1729,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       currentUser = session?.user || null;
       updateLoginButton();
     });
-    await checkUser();
+    try { await checkUser(); } catch (error) { console.error(error); }
   }
 
   document.getElementById("nextBtn").addEventListener("click", nextQuestion);
-  showPage("home");
+  document.getElementById("profileForm").addEventListener("submit", saveProfile);
+  showPage(currentUser ? (selectedGrade ? "subjects" : "profile") : "home");
 });

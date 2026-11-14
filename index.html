@@ -14,10 +14,10 @@
   <header class="site-header">
     <div>
       <h1>QUIZ HỌC TẬP</h1>
-      <p class="tagline">Chọn khối, chọn lớp, chọn môn, học từ đề cương</p>
+      <p class="tagline">Học cùng lớp từ đề cương</p>
     </div>
     <nav aria-label="Điều hướng chính">
-      <button type="button" onclick="showPage('home')">Trang chủ</button>
+      <button type="button" onclick="creatingQuiz = false; showPage('home')">Trang chủ</button>
       <button type="button" onclick="openCreate()">Tạo quiz</button>
       <button type="button" onclick="showPage('myQuizzes')">Quiz của tôi</button>
       <button id="loginBtn" type="button" onclick="loginGoogle()">Đăng nhập Google</button>
@@ -26,9 +26,22 @@
 
   <main>
     <section id="home" class="page">
-      <h2>Chọn khối</h2>
-      <p>Chọn khối 10, 11 hoặc 12 trước khi chọn lớp và môn học.</p>
-      <div id="blockList" class="selection-grid"></div>
+      <h2>Chào mừng đến Quiz học tập</h2>
+      <p>Đăng nhập và chọn lớp để bắt đầu.</p>
+      <button type="button" onclick="loginGoogle()">Đăng nhập Google</button>
+    </section>
+
+    <section id="profile" class="page" hidden>
+      <h2>Thông tin học sinh</h2>
+      <p>Nhập tên hiển thị và chọn lớp để sử dụng quiz.</p>
+      <form id="profileForm" class="quiz-form">
+        <label for="displayName">Tên hiển thị</label>
+        <input id="displayName" maxlength="80" required autocomplete="name">
+        <label for="profileClass">Lớp đang học</label>
+        <select id="profileClass" required><option value="">Chọn lớp</option></select>
+        <button type="submit">Lưu thông tin</button>
+        <p id="profileMessage" aria-live="polite"></p>
+      </form>
     </section>
 
     <section id="classes" class="page" hidden>
@@ -39,7 +52,7 @@
     </section>
 
     <section id="subjects" class="page" hidden>
-      <button type="button" class="back-link" onclick="showPage('classes')">← Đổi lớp</button>
+      <button type="button" class="back-link" onclick="showProfile()">Đổi tên hoặc lớp</button>
       <h2 id="subjectHeading">Chọn môn học</h2>
       <p id="subjectIntro"></p>
       <div id="subjectList" class="selection-grid"></div>
