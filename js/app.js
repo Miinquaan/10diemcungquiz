@@ -52,6 +52,8 @@ function sectionSymbol(title, subject) {
 let db = null;
 let currentUser = null;
 let currentProfile = null;
+let isTeacher = false;
+let isQuizAdmin = false;
 let creatingQuiz = false;
 let selectedBlock = "";
 let selectedGrade = "";
@@ -92,6 +94,8 @@ function showPage(pageId) {
   if (pageId === "library") loadQuizzes();
   if (pageId === "create") renderCreateForm();
   if (pageId === "myQuizzes") loadMyQuizzes();
+  if (pageId === "teacher") renderTeacher();
+  if (pageId === "homework") renderHomework();
 }
 
 async function loadCatalog() {
@@ -352,7 +356,18 @@ async function checkUser() {
   if (!db) return;
   const { data } = await db.auth.getUser();
   currentUser = data?.user || null;
-  if (currentUser) await loadUserProfile();
+  if (currentUser) {
+    await loadUserProfile();
+    const [teacher, admin] = await Promise.all([
+      db.from("quiz_teachers").select("user_id").eq("user_id", currentUser.id).maybeSingle(),
+      db.from("quiz_admins").select("user_id").eq("user_id", currentUser.id).maybeSingle()
+    ]);
+    isTeacher = Boolean(teacher.data);
+    isQuizAdmin = Boolean(admin.data);
+    document.getElementById("teacherNav").hidden = !isTeacher;
+    document.getElementById("teacherAdminNav").hidden = !isQuizAdmin;
+    document.getElementById("homeworkNav").hidden = false;
+  }
   updateLoginButton();
 }
 
@@ -370,6 +385,7 @@ function showProfile() { showPage(currentUser ? "profile" : "home"); }
 
 async function renderProfile() {
   await loadCatalog();
+  document.getElementById("profileUserId").textContent = currentUser?.id || "";
   const select = document.getElementById("profileClass");
   select.replaceChildren(new Option("Chọn lớp", ""));
   catalogClasses.forEach(item => select.add(new Option(item.name || item.code, item.code)));
@@ -411,6 +427,9 @@ async function loginGoogle() {
     await db.auth.signOut();
     currentUser = null;
     currentProfile = null;
+    isTeacher = false;
+    isQuizAdmin = false;
+    ["teacherNav", "teacherAdminNav", "homeworkNav"].forEach(id => document.getElementById(id).hidden = true);
     selectedGrade = "";
     creatingQuiz = false;
     updateLoginButton();
@@ -1813,6 +1832,73 @@ async function loadMyQuizzes() {
   }
 }
 
+async function renderTeacher() {
+  if (!isTeacher) { showPage("home"); return; }
+  await loadCatalog();
+  const classes = document.getElementById("assignmentClass");
+  classes.replaceChildren(new Option("Chọn lớp", ""));
+  catalogClasses.forEach(item => classes.add(new Option(item.name || item.code, item.code)));
+  const quizzes = document.getElementById("assignmentQuiz");
+  quizzes.replaceChildren(new Option("Đang tải quiz...", ""));
+  const { data, error } = await db.from("quizzes").select("id,title,subject,class_code")
+    .eq("visibility", "public").eq("status", "published").order("title");
+  quizzes.replaceChildren(new Option("Chọn quiz", ""));
+  if (error) document.getElementById("assignmentMessage").textContent = error.message;
+  else (data || []).forEach(q => quizzes.add(new Option(`${q.title} • ${q.class_code || "Chung"}`, q.id)));
+  const result = await db.from("quiz_assignments").select("id,title,class_code,due_at,quiz_id")
+    .eq("teacher_id", currentUser.id).order("created_at", { ascending: false });
+  renderAssignmentCards(document.getElementById("teacherAssignments"), result, false);
+}
+
+function renderAssignmentCards(area, result, playable) {
+  area.replaceChildren();
+  if (result.error) { area.textContent = `Không tải được bài tập: ${result.error.message}`; return; }
+  if (!result.data?.length) { area.textContent = "Chưa có bài tập."; return; }
+  result.data.forEach(item => {
+    const card = document.createElement("article"); card.className = "quiz-card";
+    const title = document.createElement("h3"); title.textContent = item.title;
+    const info = document.createElement("p");
+    info.textContent = `Lớp ${item.class_code} • ${item.due_at ? `Hạn: ${new Date(item.due_at).toLocaleString("vi-VN")}` : "Không có hạn"}`;
+    card.append(title, info);
+    if (playable) card.appendChild(makeButton("Làm bài", () => startQuiz(item.quiz_id)));
+    area.appendChild(card);
+  });
+}
+
+async function renderHomework() {
+  const area = document.getElementById("homeworkList");
+  if (!currentUser || !selectedGrade) { area.textContent = "Hãy đăng nhập và chọn lớp."; return; }
+  area.textContent = "Đang tải bài tập...";
+  const result = await db.from("quiz_assignments").select("id,title,class_code,due_at,quiz_id")
+    .eq("class_code", selectedGrade).order("created_at", { ascending: false });
+  renderAssignmentCards(area, result, true);
+}
+
+async function submitAssignment(event) {
+  event.preventDefault();
+  const message = document.getElementById("assignmentMessage");
+  const due = document.getElementById("assignmentDue").value;
+  const { error } = await db.from("quiz_assignments").insert({
+    teacher_id: currentUser.id, title: document.getElementById("assignmentTitle").value.trim(),
+    quiz_id: document.getElementById("assignmentQuiz").value,
+    class_code: document.getElementById("assignmentClass").value,
+    due_at: due ? new Date(due).toISOString() : null
+  });
+  if (error) { message.textContent = `Không giao được bài: ${error.message}`; return; }
+  event.target.reset();
+  await renderTeacher();
+  message.textContent = "Đã giao bài tập.";
+}
+
+async function grantTeacher(event) {
+  event.preventDefault();
+  const message = document.getElementById("teacherGrantMessage");
+  const { error } = await db.from("quiz_teachers").insert({
+    user_id: document.getElementById("teacherUserId").value.trim(), granted_by: currentUser.id
+  });
+  message.textContent = error ? `Không cấp được quyền: ${error.message}` : "Đã cấp quyền giáo viên.";
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   if (connectSupabase()) {
     db.auth.onAuthStateChange((_event, session) => {
@@ -1824,5 +1910,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   document.getElementById("nextBtn").addEventListener("click", nextQuestion);
   document.getElementById("profileForm").addEventListener("submit", saveProfile);
+  document.getElementById("assignmentForm").addEventListener("submit", submitAssignment);
+  document.getElementById("teacherGrantForm").addEventListener("submit", grantTeacher);
   showPage(currentUser ? (selectedGrade ? "subjects" : "profile") : "home");
 });

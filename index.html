@@ -20,11 +20,31 @@
       <button type="button" onclick="creatingQuiz = false; showPage('home')">Trang chủ</button>
       <button type="button" onclick="openCreate()">Tạo quiz</button>
       <button type="button" onclick="showPage('myQuizzes')">Quiz của tôi</button>
+      <button id="homeworkNav" type="button" onclick="showPage('homework')" hidden>Bài tập</button>
+      <button id="teacherNav" type="button" onclick="showPage('teacher')" hidden>Giáo viên</button>
+      <button id="teacherAdminNav" type="button" onclick="showPage('teacherAdmin')" hidden>Cấp quyền giáo viên</button>
       <button id="loginBtn" type="button" onclick="loginGoogle()">Đăng nhập Google</button>
     </nav>
   </header>
 
   <main>
+    <section id="homework" class="page" hidden>
+      <h2>Bài tập của lớp</h2><div id="homeworkList" class="card-list"></div>
+    </section>
+    <section id="teacher" class="page" hidden>
+      <h2>Giao bài tập</h2><p>Chọn quiz công khai và lớp nhận bài.</p>
+      <form id="assignmentForm" class="quiz-form">
+        <label for="assignmentTitle">Tên bài tập</label><input id="assignmentTitle" maxlength="150" required>
+        <label for="assignmentQuiz">Quiz công khai</label><select id="assignmentQuiz" required></select>
+        <label for="assignmentClass">Lớp nhận bài</label><select id="assignmentClass" required></select>
+        <label for="assignmentDue">Hạn nộp (không bắt buộc)</label><input type="datetime-local" id="assignmentDue">
+        <button type="submit">Giao bài</button><p id="assignmentMessage" aria-live="polite"></p>
+      </form><h3>Bài đã giao</h3><div id="teacherAssignments" class="card-list"></div>
+    </section>
+    <section id="teacherAdmin" class="page" hidden>
+      <h2>Cấp quyền giáo viên</h2><p>Nhập mã tài khoản của giáo viên đã đăng nhập web.</p>
+      <form id="teacherGrantForm" class="quiz-form"><label for="teacherUserId">Mã tài khoản</label><input id="teacherUserId" required><button type="submit">Cấp quyền</button><p id="teacherGrantMessage" aria-live="polite"></p></form>
+    </section>
     <section id="home" class="page">
       <h2>Chào mừng đến Quiz học tập</h2>
       <p>Đăng nhập và chọn lớp để bắt đầu.</p>
@@ -33,6 +53,7 @@
 
     <section id="profile" class="page" hidden>
       <h2>Thông tin học sinh</h2>
+      <p>Mã tài khoản: <code id="profileUserId"></code></p>
       <p>Nhập tên hiển thị và chọn lớp để sử dụng quiz.</p>
       <form id="profileForm" class="quiz-form">
         <label for="displayName">Tên hiển thị</label>
