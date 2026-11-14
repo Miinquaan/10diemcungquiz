@@ -308,6 +308,23 @@ fieldset label { font-weight: 400; }
   margin-top: 22px;
 }
 
+.student-number-dialog {
+  width: min(440px, calc(100% - 32px));
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 20px 60px #0f172a33;
+}
+.student-number-dialog::backdrop { background: #0f172a80; }
+.student-number-dialog h2 { margin-bottom: 8px; }
+.student-number-dialog label { display: block; margin: 18px 0 6px; font-weight: 700; }
+.student-number-error { min-height: 1.5em; margin: 8px 0; color: var(--danger); }
+.student-number-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.student-number-cancel { background: #e2e8f0; color: var(--text); }
+.student-number-cancel:hover:not(:disabled) { background: #cbd5e1; color: var(--text); }
+
 #quizSaveMessage {
   min-height: 1.5em;
   color: var(--danger);

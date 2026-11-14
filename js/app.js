@@ -1526,12 +1526,8 @@ async function startQuiz(quizId, assignment = null) {
     if (!currentUser) { alert("Hãy đăng nhập để làm bài tập."); return; }
     let studentNumber = null;
     if (assignment.require_student_number) {
-      const value = prompt("Nhập số thứ tự của bạn trong lớp (1–999):");
-      if (value === null) return;
-      if (!/^\d+$/.test(value.trim()) || Number(value) < 1 || Number(value) > 999) {
-        alert("Số thứ tự phải là số nguyên từ 1 đến 999."); return;
-      }
-      studentNumber = Number(value);
+      studentNumber = await requestStudentNumber();
+      if (studentNumber === null) return;
     }
     activeAssignment = { id: assignment.id, studentNumber };
   }
@@ -1588,6 +1584,42 @@ async function startQuiz(quizId, assignment = null) {
     document.getElementById("questionArea").textContent =
       `Không mở được quiz: ${error.message}`;
   }
+}
+
+function requestStudentNumber() {
+  const dialog = document.getElementById("studentNumberDialog");
+  const form = document.getElementById("studentNumberForm");
+  const input = document.getElementById("studentNumberInput");
+  const error = document.getElementById("studentNumberError");
+  const cancel = document.getElementById("studentNumberCancel");
+  input.value = "";
+  error.textContent = "";
+  return new Promise(resolve => {
+    let result = null;
+    const submit = event => {
+      event.preventDefault();
+      const value = input.value.trim();
+      if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 999) {
+        error.textContent = "Vui lòng nhập số nguyên từ 1 đến 999.";
+        input.focus();
+        return;
+      }
+      result = Number(value);
+      dialog.close();
+    };
+    const close = () => {
+      form.removeEventListener("submit", submit);
+      cancel.removeEventListener("click", cancelClick);
+      dialog.removeEventListener("close", close);
+      resolve(result);
+    };
+    const cancelClick = () => dialog.close();
+    form.addEventListener("submit", submit);
+    cancel.addEventListener("click", cancelClick);
+    dialog.addEventListener("close", close);
+    dialog.showModal();
+    input.focus();
+  });
 }
 
 function beginQuiz() {

@@ -138,6 +138,19 @@
     </section>
   </main>
 
+  <dialog id="studentNumberDialog" class="student-number-dialog" aria-labelledby="studentNumberTitle" aria-describedby="studentNumberHelp">
+    <form id="studentNumberForm" novalidate>
+      <h2 id="studentNumberTitle">Nhập số thứ tự</h2>
+      <p id="studentNumberHelp">Giáo viên yêu cầu bạn nhập số thứ tự trong lớp trước khi làm bài.</p>
+      <label for="studentNumberInput">Số thứ tự (1–999)</label>
+      <input id="studentNumberInput" type="number" inputmode="numeric" min="1" max="999" step="1" required>
+      <p id="studentNumberError" class="student-number-error" role="alert"></p>
+      <div class="student-number-actions">
+        <button id="studentNumberCancel" type="button" class="student-number-cancel">Hủy</button>
+        <button type="submit">Bắt đầu làm bài</button>
+      </div>
+    </form>
+  </dialog>
   <footer>QUIZ HỌC TẬP</footer>
 </body>
 </html>
