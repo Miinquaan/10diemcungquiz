@@ -60,8 +60,12 @@
 
     <section id="sections" class="page" hidden>
       <button type="button" class="back-link" onclick="showPage('subjects')">← Đổi môn</button>
-      <h2 id="sectionHeading">Chọn phần học</h2>
-      <p id="sectionIntro"></p>
+      <div class="subject-hero">
+        <div><p class="eyebrow" id="sectionClass"></p><h2 id="sectionHeading">Chọn phần học</h2><p id="sectionIntro" aria-live="polite"></p></div>
+        <div id="subjectIllustration" class="hero-illustration" aria-hidden="true"></div>
+      </div>
+      <div class="class-selector"><span>Khối lớp:</span> <div id="blockSelector" aria-label="Chọn khối lớp"></div></div>
+      <div id="directionSelector" class="direction-selector" aria-label="Định hướng Tin học" hidden></div>
       <div id="sectionList" class="selection-grid"></div>
     </section>
 

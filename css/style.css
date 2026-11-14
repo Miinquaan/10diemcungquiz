@@ -1,9 +1,9 @@
 :root {
   --primary: #1d4ed8;
   --primary-dark: #1e3a8a;
-  --background: #eef4ff;
+  --background: #F7F8FA;
   --surface: #ffffff;
-  --text: #172033;
+  --text: #1F2937;
   --muted: #64748b;
   --border: #d8e2f3;
   --success: #166534;
@@ -123,13 +123,85 @@ h2 { margin: 0 0 8px; color: var(--primary-dark); }
 }
 
 .subject-card {
-  background: #eff6ff;
-  color: var(--primary-dark);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  border: 1px solid var(--subject-light);
+  border-top: 5px solid var(--subject-main);
+  background: var(--subject-light);
+  color: #1f2937;
 }
 
 .subject-card:hover:not(:disabled) {
-  color: #fff;
+  color: #1f2937;
+  background: var(--subject-light);
+  border-color: var(--subject-main);
 }
+
+.subject-card-icon, .section-card-icon, .hero-illustration {
+  display: grid;
+  place-items: center;
+  color: var(--subject-secondary);
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+
+.subject-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: clamp(20px, 4vw, 32px);
+  border-left: 7px solid var(--subject-main);
+  border-radius: 15px;
+  background: var(--subject-light);
+}
+.subject-hero h2 { color: #1F2937; font-size: clamp(1.65rem, 3vw, 2.2rem); }
+.subject-hero p { margin: 4px 0; }
+.subject-hero .eyebrow { color: #374151; }
+.hero-illustration { flex: 0 0 90px; height: 90px; border: 2px solid var(--subject-secondary); border-radius: 50%; font-size: 3rem; }
+.class-selector { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 20px 0 0; }
+#blockSelector { display: flex; flex-wrap: wrap; gap: 8px; }
+#blockSelector button { padding: 7px 12px; border: 1px solid #cbd5e1; background: #fff; color: #1f2937; }
+#blockSelector button[aria-pressed="true"] { border: 2px solid var(--subject-main); background: var(--subject-light); font-weight: 700; }
+#blockSelector button[aria-pressed="true"]::before { content: "✓ "; }
+.text-button { padding: 4px 8px; color: #173B75; background: transparent; text-decoration: underline; }
+.text-button:hover:not(:disabled) { background: #eef4fc; color: #173B75; }
+.direction-selector { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.direction-selector[hidden] { display: none; }
+.direction-note { flex-basis: 100%; margin: 0; }
+.direction-selector button { border: 1px solid var(--subject-secondary); background: white; color: #1f2937; }
+.direction-selector button[aria-pressed="true"] { border: 2px solid #1f2937; background: var(--subject-light); color: #1f2937; font-weight: 700; }
+.direction-selector button[aria-pressed="true"]::before { content: "✓ "; }
+#sectionList { grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }
+.section-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 225px;
+  padding: 22px;
+  border: 1px solid #dce3eb;
+  border-radius: 15px;
+  background: white;
+  color: #1f2937;
+  text-align: left;
+  box-shadow: 0 4px 14px #0f172a0a;
+  overflow-wrap: anywhere;
+}
+.section-card:hover:not(:disabled) { border-color: var(--subject-main); background: white; color: #1f2937; }
+.section-card-icon { width: 48px; height: 48px; border-radius: 12px; background: var(--subject-light); }
+.section-card-label { color: #4b5563; font-size: .85rem; font-weight: 700; text-transform: uppercase; }
+.section-card-title { font-size: 1.05rem; font-weight: 700; line-height: 1.5; }
+.section-card-action { margin-top: auto; color: #173B75; font-weight: 700; }
 
 .back-link {
   margin-bottom: 20px;
@@ -316,5 +388,8 @@ footer {
   nav button { padding: 9px 10px; font-size: .86rem; }
   main { width: min(100% - 20px, 1060px); margin: 18px auto; }
   .quiz-form { padding: 16px; }
+  #subjectList, #sectionList { grid-template-columns: 1fr; }
+  #subjectList .subject-card { padding: 18px; font-size: 1rem; }
+  .hero-illustration { flex-basis: 58px; height: 58px; font-size: 2rem; }
 }
 

@@ -18,6 +18,37 @@ const SUBJECTS = [
   { id: "economics-law", name: "KT-PL", icon: "⚖", ready: true }
 ];
 
+const SUBJECT_DESIGN = {
+  physics: ["#173B75", "#347FC4", "#EEF4FC", "#F2B544", "◉"],
+  chemistry: ["#1769AA", "#36A9C9", "#EDF7FC", "#F2B544", "⬡"],
+  biology: ["#287A3D", "#65A84A", "#F0F7EC", "#E6A23C", "✿"],
+  informatics: ["#E4AC20", "#305D86", "#FFF8E5", "#207C91", "⌘"],
+  geography: ["#087DB5", "#31A3C5", "#EDF8FC", "#5C9C55", "◎"],
+  history: ["#AE3038", "#C78746", "#FCF2EB", "#8A623E", "◷"],
+  "economics-law": ["#714595", "#9A78B5", "#F5EFFA", "#D5AB46", "⚖"],
+  english: ["#254F91", "#5686C1", "#EEF4FC", "#F2B544", "Aa"]
+};
+let selectedDirection = "computer";
+
+function applySubjectDesign(element, id) {
+  const colors = SUBJECT_DESIGN[id] || SUBJECT_DESIGN.english;
+  ["--subject-main", "--subject-secondary", "--subject-light", "--subject-accent"]
+    .forEach((name, index) => element.style.setProperty(name, colors[index]));
+  element.classList.toggle("subject-yellow", id === "informatics");
+}
+
+function sectionParts(title) {
+  const withoutDirection = title.replace(/\s*\(Định hướng (?:Khoa học máy tính|Tin học ứng dụng)\)\s*$/, "");
+  const match = withoutDirection.match(/^(Chương|Chủ đề|Phần)\s+([IVXLCDM]+)\s*:\s*(.+)$/iu);
+  return match ? { label: `${match[1]} ${match[2]}`, title: match[3] } : { label: "", title: withoutDirection };
+}
+
+function sectionSymbol(title, subject) {
+  const value = title.toLocaleLowerCase("vi");
+  const symbols = [[/điện|mạch|pin/, "⊕"], [/sóng|dao động/, "∿"], [/di truyền|dna|nhiễm sắc/, "⌁"], [/tế bào/, "◉"], [/sinh thái|sinh vật|virus/, "✿"], [/bản đồ|vùng|địa lí/, "◎"], [/dữ liệu|cơ sở/, "▦"], [/lập trình|máy tính/, "⌘"], [/pháp luật|quyền|hiến pháp/, "⚖"], [/kinh tế|thị trường|tài chính/, "▥"], [/văn minh|lịch sử|cách mạng/, "◷"], [/nguyên tử|phân tử|liên kết/, "⬡"]];
+  return symbols.find(([pattern]) => pattern.test(value))?.[1] || (SUBJECT_DESIGN[subject] || SUBJECT_DESIGN.english)[4];
+}
+
 let db = null;
 let currentUser = null;
 let currentProfile = null;
@@ -167,7 +198,7 @@ async function renderSubjects() {
     : SUBJECTS;
 
   subjects.forEach(subject => {
-    const button = makeButton(`${subject.icon}\n${subject.name}`, () => {
+    const button = makeButton("", () => {
       selectedSubject = subject.id;
       selectedSectionId = "";
       selectedSectionTitle = "";
@@ -175,6 +206,14 @@ async function renderSubjects() {
     });
 
     button.className = "selection-card subject-card";
+    applySubjectDesign(button, subject.id);
+    const symbol = document.createElement("span");
+    symbol.className = "subject-card-icon";
+    symbol.setAttribute("aria-hidden", "true");
+    symbol.textContent = (SUBJECT_DESIGN[subject.id] || SUBJECT_DESIGN.english)[4];
+    const name = document.createElement("span");
+    name.textContent = subject.name;
+    button.append(symbol, name);
     area.appendChild(button);
   });
 }
@@ -188,8 +227,21 @@ async function renderSections() {
   const area = document.getElementById("sectionList");
   const heading = document.getElementById("sectionHeading");
   const intro = document.getElementById("sectionIntro");
-  heading.textContent = `${selectedGrade} - ${subjectName()}: chọn phần học`;
-  intro.textContent = "Chỉ quiz thuộc phần học này mới được hiển thị.";
+  applySubjectDesign(document.getElementById("sections"), selectedSubject);
+  document.getElementById("sectionClass").textContent = `Lớp ${selectedGrade}`;
+  const blockSelector = document.getElementById("blockSelector");
+  blockSelector.replaceChildren();
+  BLOCKS.forEach(block => {
+    const button = makeButton(`Khối ${block}`, () => {
+      if (block !== selectedGrade.slice(0, 2)) showProfile();
+    });
+    button.setAttribute("aria-pressed", String(block === selectedGrade.slice(0, 2)));
+    if (block === selectedGrade.slice(0, 2)) button.setAttribute("aria-current", "true");
+    blockSelector.appendChild(button);
+  });
+  document.getElementById("subjectIllustration").textContent = (SUBJECT_DESIGN[selectedSubject] || SUBJECT_DESIGN.english)[4];
+  heading.textContent = subjectName();
+  intro.textContent = "Đang tải danh mục...";
   area.textContent = "Đang tải phần học...";
 
   if (!db) {
@@ -213,8 +265,29 @@ async function renderSections() {
       return;
     }
 
-    data.forEach(section => {
-      const button = makeButton(section.title, () => {
+    const selector = document.getElementById("directionSelector");
+    const hasDirections = selectedSubject === "informatics" && data.some(item => /\(Định hướng /.test(item.title));
+    selector.hidden = !hasDirections;
+    selector.replaceChildren();
+    const draw = () => {
+      area.replaceChildren();
+      const visible = data.filter(item => !/\(Định hướng /.test(item.title) ||
+        (selectedDirection === "computer" ? item.title.includes("(Định hướng Khoa học máy tính)") : item.title.includes("(Định hướng Tin học ứng dụng)")));
+      intro.textContent = `${visible.length} phần học • Chọn nội dung để tiếp tục`;
+      if (hasDirections) {
+        selector.replaceChildren();
+        const note = document.createElement("p");
+        note.className = "direction-note";
+        note.textContent = "Kiến thức chung luôn được hiển thị. Chọn một định hướng:";
+        selector.appendChild(note);
+        [["computer", "Khoa học máy tính"], ["applied", "Tin học ứng dụng"]].forEach(([value, label]) => {
+          const choice = makeButton(label, () => { selectedDirection = value; draw(); });
+          choice.setAttribute("aria-pressed", String(selectedDirection === value));
+          selector.appendChild(choice);
+        });
+      }
+      visible.forEach(section => {
+      const button = makeButton("", () => {
         selectedSectionId = section.id;
         selectedSectionTitle = section.title;
         if (creatingQuiz) {
@@ -225,9 +298,26 @@ async function renderSections() {
           showPage("create");
         } else showPage("library");
       });
-      button.className = "selection-card";
+      button.className = "section-card";
+      const parts = sectionParts(section.title);
+      const icon = document.createElement("span");
+      icon.className = "section-card-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = sectionSymbol(section.title, selectedSubject);
+      const label = document.createElement("span");
+      label.className = "section-card-label";
+      label.textContent = parts.label;
+      const name = document.createElement("span");
+      name.className = "section-card-title";
+      name.textContent = parts.title;
+      const action = document.createElement("span");
+      action.className = "section-card-action";
+      action.textContent = "Xem nội dung →";
+      button.append(icon, label, name, action);
       area.appendChild(button);
-    });
+      });
+    };
+    draw();
   } catch (error) {
     area.textContent = `Không tải được phần học: ${error.message}`;
   }
