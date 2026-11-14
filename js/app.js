@@ -60,7 +60,7 @@ async function loadCatalog() {
   try {
     const [classesResult, subjectsResult] = await Promise.all([
       db.from("classes").select("code,block,name").eq("is_active", true)
-        .order("block").order("code"),
+        .order("block").order("class_number"),
       db.from("subjects").select("code,name").eq("is_active", true)
         .order("name")
     ]);
@@ -409,7 +409,7 @@ function renderCreateForm() {
       <label for="newQuizVisibility">Chia sẻ</label>
       <select id="newQuizVisibility">
         <option value="private">Riêng tư</option>
-        <option value="public">Công khai (chờ duyệt)</option>
+        <option value="public">Công khai</option>
       </select>
 
       <div class="form-actions">
@@ -684,7 +684,7 @@ async function saveNewQuiz(event) {
         class_code: selectedGrade,
         section_id: selectedSectionId,
         visibility,
-        status: visibility === "public" ? "pending" : "published",
+        status: "published",
         question_count: count,
         question_types: types
       })
@@ -707,7 +707,7 @@ async function saveNewQuiz(event) {
     if (wordsError) throw wordsError;
 
     message.textContent = visibility === "public"
-      ? "Đã tạo quiz và đang chờ duyệt."
+      ? "Đã tạo quiz công khai."
       : "Đã lưu quiz riêng tư.";
   } catch (error) {
     message.textContent = `Không thể lưu quiz: ${error.message}`;
@@ -991,7 +991,7 @@ async function loadMyQuizzes() {
         `<h3>${escapeHtml(quiz.title)}</h3>` +
         `<p>${escapeHtml(quiz.description || "")}</p>` +
         `<p>${quiz.question_count} câu • ${quiz.visibility === "public"
-          ? quiz.status === "pending" ? "Chờ duyệt" : "Công khai"
+          ? "Công khai"
           : "Riêng tư"}</p>`;
       card.appendChild(makeButton("Làm thử", () => startQuiz(quiz.id)));
       area.appendChild(card);
