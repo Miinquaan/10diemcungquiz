@@ -607,17 +607,18 @@ function markedTextState(marked) {
 function parseBiologyChoice(marked) {
   const state = markedTextState(marked);
   const clean = state.plain;
-  const matches = [...clean.matchAll(/(?:^|\s)([A-D])\s*[.)]/g)];
+  const matches = [...clean.matchAll(/(^|[^A-ZÀ-Ỹ])([A-D])\s*[.)](?=\s)/g)];
   if (matches.length < 4) return null;
-  const first = matches[0].index + matches[0][0].lastIndexOf(matches[0][1]);
+  const labelOffset = match => match.index + match[1].length;
+  const first = labelOffset(matches[0]);
   const prompt = clean.slice(0, first)
     .replace(/^Câu\s*\d+\s*[.:]?\s*/i, "").trim();
   const options = matches.slice(0, 4).map((match, index) => {
-    const start = match.index + match[0].lastIndexOf(match[1]);
+    const start = labelOffset(match);
     const end = index < 3
-      ? matches[index + 1].index + matches[index + 1][0].lastIndexOf(matches[index + 1][1])
+      ? labelOffset(matches[index + 1])
       : clean.length;
-    const key = match[1];
+    const key = match[2];
     const text = clean.slice(start, end)
       .replace(/^[A-D]\s*[.)]\s*/i, "").trim();
     const hasUnderline = state.underlined.slice(start, end).some(Boolean);
