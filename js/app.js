@@ -12,6 +12,7 @@ const SUBJECTS = [
   { id: "biology", name: "Sinh", icon: "🧬", ready: true },
   { id: "informatics", name: "Tin", icon: "⌨", ready: true },
   { id: "history", name: "Sử", icon: "⌛", ready: true },
+  { id: "geography", name: "Địa lí", icon: "🌍", ready: true },
   { id: "physics", name: "Lý", icon: "⚛", ready: true },
   { id: "chemistry", name: "Hóa", icon: "⚗", ready: true },
   { id: "economics-law", name: "KT-PL", icon: "⚖", ready: true }

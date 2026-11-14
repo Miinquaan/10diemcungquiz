@@ -114,6 +114,14 @@ h2 { margin: 0 0 8px; color: var(--primary-dark); }
   text-align: center;
 }
 
+#subjectList {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 680px) {
+  #subjectList .subject-card { padding: 10px 3px; font-size: .8rem; overflow-wrap: anywhere; }
+}
+
 .subject-card {
   background: #eff6ff;
   color: var(--primary-dark);
