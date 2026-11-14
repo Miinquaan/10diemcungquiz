@@ -1,24 +1,24 @@
-
 "use strict";
 
-// =====================================
-// 1. CAU HINH SUPABASE
-// =====================================
+const SUPABASE_URL = "https://tdekbojbfnttitllfltl.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_GnRVaCZsV43UDnJHNon9ng_GSvUe6YT";
+const WEBSITE_URL = "https://miinquaan.github.io/10diemcungquiz/";
 
-const SUPABASE_URL =
-  "https://tdekbojbfnttitllfltl.supabase.co";
-
-const SUPABASE_ANON_KEY =
-  "sb_publishable_GnRVaCZsV43UDnJHNon9ng_GSvUe6YT";
-
-const WEBSITE_URL =
-  "https://miinquaan.github.io/10diemcungquiz/";
+const GRADES = ["6", "7", "8", "9", "10", "11", "12"];
+const SUBJECTS = [
+  { id: "english", name: "Tiếng Anh", icon: "Aa", ready: true },
+  { id: "math", name: "Toán", icon: "∑", ready: false },
+  { id: "literature", name: "Ngữ văn", icon: "V", ready: false },
+  { id: "science", name: "Khoa học tự nhiên", icon: "⚗", ready: false },
+  { id: "history", name: "Lịch sử", icon: "⌛", ready: false }
+];
 
 let db = null;
 let currentUser = null;
-let editingQuizId = null;
-let savingQuiz = false;
-
+let selectedGrade = "";
+let selectedSubject = "";
+let scannedVocabulary = [];
+let scannedDocumentTitle = "";
 let activeQuiz = null;
 let activeQuestions = [];
 let questionIndex = 0;
@@ -26,192 +26,130 @@ let correctAnswers = 0;
 let startedAt = 0;
 let timerInterval = null;
 let answeredCurrent = false;
+let previewMode = false;
 
-// =====================================
-// 2. CHUYEN TRANG
-// =====================================
-
-function showPage(pageId, options = {}) {
+function showPage(pageId) {
   const target = document.getElementById(pageId);
-
-  if (!target) {
-    console.error("Không tìm thấy trang:", pageId);
-    return;
-  }
-
+  if (!target) return;
   if (pageId !== "play") stopTimer();
-
-  if (
-    pageId === "create" &&
-    !options.preserveEditing
-  ) {
-    editingQuizId = null;
-  }
 
   document.querySelectorAll(".page").forEach(page => {
     page.hidden = page.id !== pageId;
   });
 
+  if (pageId === "home") renderGrades();
+  if (pageId === "subjects") renderSubjects();
   if (pageId === "library") loadQuizzes();
+  if (pageId === "create") renderCreateForm();
   if (pageId === "myQuizzes") loadMyQuizzes();
-  if (pageId === "history") showHistory();
-  if (pageId === "admin") {
-  loadPendingQuizzes();
 }
 
-  if (pageId === "create") showCreatePage();
+function renderGrades() {
+  const area = document.getElementById("gradeList");
+  area.replaceChildren();
+
+  GRADES.forEach(grade => {
+    const button = makeButton(`Lớp ${grade}`, () => {
+      selectedGrade = grade;
+      selectedSubject = "";
+      showPage("subjects");
+    });
+    button.className = "selection-card";
+    area.appendChild(button);
+  });
 }
 
-function openNewQuiz() {
-  editingQuizId = null;
+function renderSubjects() {
+  if (!selectedGrade) {
+    showPage("home");
+    return;
+  }
+
+  document.getElementById("subjectHeading").textContent =
+    `Lớp ${selectedGrade}: chọn môn học`;
+  document.getElementById("subjectIntro").textContent =
+    "Tiếng Anh đã hỗ trợ tạo quiz từ tệp đề cương Word.";
+
+  const area = document.getElementById("subjectList");
+  area.replaceChildren();
+
+  SUBJECTS.forEach(subject => {
+    const button = makeButton(`${subject.icon}\n${subject.name}`, () => {
+      if (!subject.ready) return;
+      selectedSubject = subject.id;
+      showPage("library");
+    });
+
+    button.className = "selection-card subject-card";
+    button.disabled = !subject.ready;
+    if (!subject.ready) {
+      button.title = "Đang xây dựng mẫu đề cương cho môn này";
+    }
+
+    area.appendChild(button);
+  });
+}
+
+function openCreate() {
+  if (!selectedGrade || !selectedSubject) {
+    alert("Hãy chọn lớp và môn học trước khi tạo quiz.");
+    showPage("home");
+    return;
+  }
+
   showPage("create");
 }
 
-function cancelQuizEdit() {
-  editingQuizId = null;
-  showPage("myQuizzes");
-}
-
-// =====================================
-// 3. KET NOI SUPABASE
-// =====================================
-
 function connectSupabase() {
-  if (!window.supabase) {
-    console.error("Không tải được Supabase JS.");
-    return false;
-  }
+  if (!window.supabase) return false;
 
-  try {
-    db = window.supabase.createClient(
-      SUPABASE_URL,
-      SUPABASE_ANON_KEY,
-      {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true
-        }
+  db = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
       }
-    );
-
-    return true;
-  } catch (error) {
-    console.error("Lỗi kết nối:", error);
-    return false;
-  }
-}
-
-// =====================================
-// 4. DANG NHAP / DANG XUAT
-// =====================================
-
-async function loginGoogle() {
-  if (!db) {
-    alert("Chưa kết nối Supabase.");
-    return;
-  }
-
-  if (currentUser) {
-    if (confirm("Bạn muốn đăng xuất?")) {
-      await logoutGoogle();
     }
-    return;
-  }
+  );
 
-  try {
-    const { error } = await db.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: WEBSITE_URL
-      }
-    });
-
-    if (error) throw error;
-  } catch (error) {
-    alert("Lỗi đăng nhập: " + error.message);
-  }
-}
-
-async function logoutGoogle() {
-  try {
-    const { error } = await db.auth.signOut();
-    if (error) throw error;
-
-    currentUser = null;
-    editingQuizId = null;
-
-    updateLoginButton();
-    showPage("home");
-  } catch (error) {
-    alert("Lỗi đăng xuất: " + error.message);
-  }
-}
-
-function updateLoginButton() {
-  const button = document.getElementById("loginBtn");
-  if (!button) return;
-
-  button.textContent = currentUser
-    ? "Đăng xuất"
-    : "Đăng nhập Google";
-
-  button.title = currentUser?.email || "";
+  return true;
 }
 
 async function checkUser() {
   if (!db) return;
+  const { data } = await db.auth.getUser();
+  currentUser = data?.user || null;
+  updateLoginButton();
+}
 
-  try {
-    const { data, error } = await db.auth.getUser();
+function updateLoginButton() {
+  const button = document.getElementById("loginBtn");
+  button.textContent = currentUser ? "Đăng xuất" : "Đăng nhập Google";
+  button.title = currentUser?.email || "";
+}
 
-    if (error) {
-      console.warn(error.message);
-    }
+async function loginGoogle() {
+  if (!db) {
+    alert("Không thể kết nối dịch vụ đăng nhập.");
+    return;
+  }
 
-    currentUser = data?.user || null;
-    
-await checkQuizAdmin();
-
+  if (currentUser) {
+    await db.auth.signOut();
+    currentUser = null;
     updateLoginButton();
-  } catch (error) {
-    console.error(error);
-  }
-}
-
-// =====================================
-// 5. CAC HAM HO TRO
-// =====================================
-
-function shuffle(items) {
-  const result = [...items];
-
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-
-    [result[i], result[j]] =
-      [result[j], result[i]];
+    return;
   }
 
-  return result;
-}
+  const { error } = await db.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: WEBSITE_URL }
+  });
 
-function formatDuration(seconds) {
-  const minutes = Math.floor(seconds / 60);
-  const remaining = seconds % 60;
-
-  return (
-    String(minutes).padStart(2, "0") +
-    ":" +
-    String(remaining).padStart(2, "0")
-  );
-}
-
-function stopTimer() {
-  if (timerInterval !== null) {
-    clearInterval(timerInterval);
-    timerInterval = null;
-  }
+  if (error) alert(`Không thể đăng nhập: ${error.message}`);
 }
 
 function makeButton(text, action) {
@@ -222,102 +160,449 @@ function makeButton(text, action) {
   return button;
 }
 
-// =====================================
-// 6. KHO QUIZ CONG KHAI
-// =====================================
+function shuffle(items) {
+  const result = [...items];
+
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+
+  return result;
+}
+
+function formatDuration(seconds) {
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function stopTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = null;
+}
+
+function subjectName() {
+  return SUBJECTS.find(subject => subject.id === selectedSubject)?.name ||
+    "Môn học";
+}
 
 async function loadQuizzes() {
+  const heading = document.getElementById("libraryHeading");
+  const intro = document.getElementById("libraryIntro");
   const area = document.getElementById("quizList");
-  if (!area) return;
 
+  heading.textContent = `Kho quiz ${subjectName()} - Lớp ${selectedGrade}`;
+  intro.textContent = "Chọn một quiz để bắt đầu làm bài.";
   area.textContent = "Đang tải danh sách quiz...";
 
   if (!db) {
-    area.textContent = "Chưa kết nối Supabase.";
+    area.textContent = "Chưa kết nối được kho quiz.";
     return;
   }
 
   try {
     const { data, error } = await db
       .from("quizzes")
-      .select(
-        "id,title,description,question_count,question_types"
-      )
+      .select("id,title,description,question_count,question_types")
       .eq("visibility", "public")
       .eq("status", "published")
-      .order("created_at", {
-        ascending: false
-      });
+      .eq("subject", selectedSubject)
+      .order("created_at", { ascending: false });
 
     if (error) throw error;
 
+    const gradeMark = `[Lớp ${selectedGrade}]`;
+    const quizzes = (data || []).filter(quiz =>
+      !quiz.description?.startsWith("[Lớp") ||
+      quiz.description.startsWith(gradeMark)
+    );
+
     area.replaceChildren();
 
-    if (!data?.length) {
-      area.textContent = "Chưa có quiz công khai.";
+    if (!quizzes.length) {
+      area.textContent = "Chưa có quiz công khai cho lớp và môn này.";
       return;
     }
 
-    data.forEach(quiz => {
-      const card = document.createElement("div");
+    quizzes.forEach(quiz => {
+      const card = document.createElement("article");
       card.className = "quiz-card";
 
       const title = document.createElement("h3");
-      title.textContent = quiz.title || "Quiz";
+      title.textContent = quiz.title;
 
       const description = document.createElement("p");
-      description.textContent = quiz.description || "";
+      description.textContent = (quiz.description || "")
+        .replace(/^\[Lớp \d+\]\s*/, "");
 
       const count = document.createElement("p");
-      count.textContent =
-        "Số câu hỏi: " + quiz.question_count;
+      count.textContent = `${quiz.question_count} câu hỏi`;
 
-      const button = makeButton(
-        "Bắt đầu làm quiz",
-        () => startQuiz(quiz.id)
+      card.append(
+        title,
+        description,
+        count,
+        makeButton("Bắt đầu làm quiz", () => startQuiz(quiz.id))
       );
 
-      card.append(title, description, count, button);
       area.appendChild(card);
     });
   } catch (error) {
-    console.error(error);
-    area.textContent =
-      "Không tải được quiz: " + error.message;
+    area.textContent = `Không tải được quiz: ${error.message}`;
   }
 }
 
-// =====================================
-// 7. TAO CAU HOI TRAC NGHIEM
-// =====================================
+function renderCreateForm() {
+  const area = document.getElementById("createQuizForm");
+
+  document.getElementById("createContext").textContent =
+    `Lớp ${selectedGrade} • ${subjectName()} • Tải tệp .docx có bảng từ vựng theo mẫu.`;
+
+  area.innerHTML = `
+    <form id="newQuizForm" class="quiz-form">
+      <label for="newQuizTitle">Tên quiz</label>
+      <input id="newQuizTitle" maxlength="150" required
+        placeholder="Ví dụ: Từ vựng Unit 4 - Test 1">
+
+      <label for="outlineFile">Tệp đề cương Word</label>
+      <input id="outlineFile" type="file"
+        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        required>
+      <p class="form-help">Mẫu Tiếng Anh cần bảng có các cột: Keyword / Collocation, Định nghĩa tiếng Việt, IPA, Ví dụ nguyên văn trong bài.</p>
+      <div id="scanSummary" class="scan-summary" hidden></div>
+
+      <fieldset>
+        <legend>Loại quiz</legend>
+        <label><input type="checkbox" name="questionType" value="en_vi" checked> Anh - Việt</label>
+        <label><input type="checkbox" name="questionType" value="vi_en"> Việt - Anh</label>
+        <label><input type="checkbox" name="questionType" value="cloze"> Vận dụng: điền từ vào ví dụ</label>
+      </fieldset>
+
+      <label for="newQuizCount">Số lượng câu hỏi</label>
+      <input id="newQuizCount" type="number" min="4" value="10" disabled required>
+      <p id="countHint" class="form-help">Tải tệp để xác định số câu tối đa.</p>
+
+      <label for="newQuizVisibility">Chia sẻ</label>
+      <select id="newQuizVisibility">
+        <option value="private">Riêng tư</option>
+        <option value="public">Công khai (chờ duyệt)</option>
+      </select>
+
+      <div class="form-actions">
+        <button type="button" id="previewQuizBtn" disabled>Làm thử từ tệp</button>
+        <button type="submit" id="saveQuizBtn" disabled>Lưu quiz</button>
+      </div>
+      <p id="quizSaveMessage" aria-live="polite"></p>
+    </form>
+  `;
+
+  scannedVocabulary = [];
+  scannedDocumentTitle = "";
+
+  document.getElementById("outlineFile")
+    .addEventListener("change", readOutlineFile);
+  document.getElementById("newQuizForm")
+    .addEventListener("submit", saveNewQuiz);
+  document.getElementById("previewQuizBtn")
+    .addEventListener("click", startPreviewQuiz);
+}
+
+function normalizeHeader(value) {
+  return value.normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cellText(cell) {
+  return Array.from(
+    cell.getElementsByTagNameNS(
+      "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "t"
+    )
+  ).map(node => node.textContent)
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function directChildren(element, name) {
+  return Array.from(element.childNodes).filter(node =>
+    node.nodeType === 1 && node.localName === name
+  );
+}
+
+async function parseVocabularyDocx(file) {
+  if (!window.JSZip) {
+    throw new Error(
+      "Không tải được bộ đọc tệp Word. Hãy kiểm tra kết nối mạng rồi thử lại."
+    );
+  }
+
+  const zip = await window.JSZip.loadAsync(await file.arrayBuffer());
+  const documentFile = zip.file("word/document.xml");
+
+  if (!documentFile) {
+    throw new Error("Tệp Word không có nội dung hợp lệ.");
+  }
+
+  const xml = new DOMParser().parseFromString(
+    await documentFile.async("text"),
+    "application/xml"
+  );
+
+  if (xml.querySelector("parsererror")) {
+    throw new Error("Không thể đọc nội dung tệp Word.");
+  }
+
+  const namespace =
+    "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+  const title = Array.from(xml.getElementsByTagNameNS(namespace, "p"))
+    .map(paragraph => cellText(paragraph))
+    .find(text => text) || file.name.replace(/\.docx$/i, "");
+
+  const tables = Array.from(xml.getElementsByTagNameNS(namespace, "tbl"));
+
+  for (const table of tables) {
+    const rows = directChildren(table, "tr")
+      .map(row => directChildren(row, "tc").map(cellText));
+
+    if (rows.length < 2) continue;
+
+    const headers = rows[0].map(normalizeHeader);
+    const keywordIndex = headers.findIndex(header =>
+      header.includes("keyword") || header.includes("collocation")
+    );
+    const definitionIndex = headers.findIndex(header =>
+      header.includes("dinh nghia") ||
+      header.includes("nghia tieng viet")
+    );
+
+    if (keywordIndex < 0 || definitionIndex < 0) continue;
+
+    const ipaIndex = headers.findIndex(header =>
+      header === "ipa" || header.includes("phien am")
+    );
+    const exampleIndex = headers.findIndex(header =>
+      header.includes("vi du")
+    );
+
+    const words = rows.slice(1).map(cells => ({
+      english: (cells[keywordIndex] || "").trim(),
+      vietnamese: (cells[definitionIndex] || "").trim(),
+      ipa: ipaIndex >= 0 ? (cells[ipaIndex] || "").trim() : "",
+      example: exampleIndex >= 0 ? (cells[exampleIndex] || "").trim() : ""
+    })).filter(word => word.english && word.vietnamese);
+
+    if (words.length) return { title, words };
+  }
+
+  throw new Error(
+    "Không tìm thấy bảng từ vựng đúng mẫu. Tệp cần có cột Keyword / Collocation và Định nghĩa tiếng Việt."
+  );
+}
+
+async function readOutlineFile(event) {
+  const message = document.getElementById("quizSaveMessage");
+  const summary = document.getElementById("scanSummary");
+  const count = document.getElementById("newQuizCount");
+  const preview = document.getElementById("previewQuizBtn");
+  const save = document.getElementById("saveQuizBtn");
+  const file = event.target.files?.[0];
+
+  scannedVocabulary = [];
+  preview.disabled = true;
+  save.disabled = true;
+  count.disabled = true;
+  summary.hidden = true;
+
+  if (!file) return;
+
+  if (!/\.docx$/i.test(file.name)) {
+    message.textContent = "Chỉ nhận tệp Word định dạng .docx.";
+    return;
+  }
+
+  message.textContent = "Đang quét đề cương...";
+
+  try {
+    const parsed = await parseVocabularyDocx(file);
+
+    if (parsed.words.length < 4) {
+      throw new Error("Cần ít nhất 4 từ vựng để tạo câu hỏi trắc nghiệm.");
+    }
+
+    scannedVocabulary = parsed.words;
+    scannedDocumentTitle = parsed.title;
+
+    const titleInput = document.getElementById("newQuizTitle");
+    if (!titleInput.value.trim()) titleInput.value = parsed.title;
+
+    count.disabled = false;
+    count.min = "4";
+    count.max = String(parsed.words.length);
+    count.value = String(Math.min(10, parsed.words.length));
+
+    document.getElementById("countHint").textContent =
+      `Bạn có thể chọn từ 4 đến ${parsed.words.length} câu hỏi.`;
+
+    summary.innerHTML =
+      `<strong>Đã quét ${parsed.words.length} từ vựng.</strong><br>` +
+      `Ví dụ: ${escapeHtml(parsed.words[0].english)} — ${escapeHtml(parsed.words[0].vietnamese)}`;
+
+    summary.hidden = false;
+    preview.disabled = false;
+    save.disabled = false;
+    message.textContent = "";
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+function escapeHtml(value) {
+  return value.replace(/[&<>'"]/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;"
+  })[char]);
+}
+
+function selectedQuestionTypes() {
+  return Array.from(
+    document.querySelectorAll('input[name="questionType"]:checked')
+  ).map(input => input.value);
+}
+
+function validateCreation() {
+  const title = document.getElementById("newQuizTitle").value.trim();
+  const count = Number(document.getElementById("newQuizCount").value);
+  const types = selectedQuestionTypes();
+
+  if (!title) throw new Error("Hãy nhập tên quiz.");
+  if (!scannedVocabulary.length) throw new Error("Hãy tải tệp đề cương trước.");
+  if (!types.length) throw new Error("Hãy chọn ít nhất một loại quiz.");
+
+  if (!Number.isInteger(count) || count < 4 ||
+      count > scannedVocabulary.length) {
+    throw new Error(`Số câu phải từ 4 đến ${scannedVocabulary.length}.`);
+  }
+
+  if (types.includes("cloze") &&
+      scannedVocabulary.some(word => !word.example)) {
+    throw new Error(
+      "Dạng vận dụng cần câu ví dụ cho mọi từ được quét."
+    );
+  }
+
+  const english = new Set(
+    scannedVocabulary.map(word => word.english.toLowerCase())
+  ).size;
+  const vietnamese = new Set(
+    scannedVocabulary.map(word => word.vietnamese.toLowerCase())
+  ).size;
+
+  if ((types.includes("vi_en") || types.includes("cloze")) &&
+      english < 4) {
+    throw new Error("Cần ít nhất 4 từ tiếng Anh khác nhau.");
+  }
+
+  if (types.includes("en_vi") && vietnamese < 4) {
+    throw new Error("Cần ít nhất 4 nghĩa tiếng Việt khác nhau.");
+  }
+
+  return { title, count, types };
+}
+
+function startPreviewQuiz() {
+  try {
+    const { title, count, types } = validateCreation();
+    previewMode = true;
+    activeQuiz = {
+      id: null,
+      title: `${title} (bản thử)`,
+      question_count: count,
+      question_types: types
+    };
+    activeQuestions = makeQuestions(scannedVocabulary, activeQuiz);
+    beginQuiz();
+  } catch (error) {
+    document.getElementById("quizSaveMessage").textContent = error.message;
+  }
+}
+
+async function saveNewQuiz(event) {
+  event.preventDefault();
+  const message = document.getElementById("quizSaveMessage");
+  const button = document.getElementById("saveQuizBtn");
+
+  try {
+    const { title, count, types } = validateCreation();
+
+    if (!db || !currentUser) {
+      throw new Error("Hãy đăng nhập Google trước khi lưu quiz.");
+    }
+
+    button.disabled = true;
+    message.textContent = "Đang lưu quiz...";
+
+    const visibility = document.getElementById("newQuizVisibility").value;
+    const { data: quiz, error: quizError } = await db
+      .from("quizzes")
+      .insert({
+        owner_id: currentUser.id,
+        title,
+        description: `[Lớp ${selectedGrade}] ${scannedDocumentTitle}`,
+        subject: selectedSubject,
+        visibility,
+        status: visibility === "public" ? "pending" : "published",
+        question_count: count,
+        question_types: types
+      })
+      .select("id")
+      .single();
+
+    if (quizError) throw quizError;
+
+    const rows = scannedVocabulary.map(word => ({
+      quiz_id: quiz.id,
+      english: word.english,
+      vietnamese: word.vietnamese,
+      example: word.example
+    }));
+
+    const { error: wordsError } = await db
+      .from("vocabulary")
+      .insert(rows);
+
+    if (wordsError) throw wordsError;
+
+    message.textContent = visibility === "public"
+      ? "Đã tạo quiz và đang chờ duyệt."
+      : "Đã lưu quiz riêng tư.";
+  } catch (error) {
+    message.textContent = `Không thể lưu quiz: ${error.message}`;
+  } finally {
+    button.disabled = !scannedVocabulary.length;
+  }
+}
 
 function makeQuestions(words, quiz) {
-  const available = words.filter(
-    w => w.english?.trim() && w.vietnamese?.trim()
+  const available = words.filter(word =>
+    word.english?.trim() && word.vietnamese?.trim()
   );
 
   if (available.length < 4) {
-    throw new Error("Quiz cần ít nhất 4 từ vựng.");
+    throw new Error("Quiz cần ít nhất 4 mục hợp lệ.");
   }
 
   const types = (quiz.question_types || ["en_vi"])
-    .map(type => {
-      if (type === "en-vi") return "en_vi";
-      if (type === "vi-en") return "vi_en";
-      return type;
-    })
-    .filter(type =>
-      ["en_vi", "vi_en", "cloze"].includes(type)
-    );
+    .filter(type => ["en_vi", "vi_en", "cloze"].includes(type));
 
-  if (!types.length) types.push("en_vi");
-
-  const count = Math.min(
-    Math.max(1, quiz.question_count || available.length),
-    available.length
-  );
-
-  const chosen = shuffle(available).slice(0, count);
+  const chosen = shuffle(available)
+    .slice(0, Math.min(quiz.question_count, available.length));
 
   return chosen.map((word, index) => {
     let type = types[index % types.length];
@@ -326,41 +611,37 @@ function makeQuestions(words, quiz) {
     let pool;
 
     if (type === "cloze") {
-      const example = word.example || "";
-      const position = example.toLowerCase()
+      const position = word.example.toLowerCase()
         .indexOf(word.english.toLowerCase());
 
       if (position >= 0) {
         prompt =
-          example.slice(0, position) +
+          word.example.slice(0, position) +
           "_____" +
-          example.slice(position + word.english.length);
-
+          word.example.slice(position + word.english.length);
         answer = word.english;
-        pool = available.map(w => w.english);
+        pool = available.map(item => item.english);
       } else {
         type = "en_vi";
       }
     }
 
-    if (type === "vi_en") {
-      prompt = word.vietnamese;
-      answer = word.english;
-      pool = available.map(w => w.english);
-    } else if (type === "en_vi") {
+    if (type === "en_vi") {
       prompt = word.english;
       answer = word.vietnamese;
-      pool = available.map(w => w.vietnamese);
+      pool = available.map(item => item.vietnamese);
+    } else if (type === "vi_en") {
+      prompt = word.vietnamese;
+      answer = word.english;
+      pool = available.map(item => item.english);
     }
 
-    const distractors = shuffle(
-      [...new Set(pool.filter(x => x !== answer))]
-    ).slice(0, 3);
+    const distractors = shuffle([
+      ...new Set(pool.filter(item => item !== answer))
+    ]).slice(0, 3);
 
     if (distractors.length < 3) {
-      throw new Error(
-        "Cần ít nhất 4 đáp án khác nhau cho mỗi dạng câu hỏi."
-      );
+      throw new Error("Không đủ đáp án khác nhau để tạo câu hỏi.");
     }
 
     return {
@@ -372,25 +653,9 @@ function makeQuestions(words, quiz) {
   });
 }
 
-// =====================================
-// 8. BAT DAU LAM QUIZ
-// =====================================
-
 async function startQuiz(quizId) {
   showPage("play");
-
-  const area = document.getElementById("questionArea");
-  area.textContent = "Đang tải câu hỏi...";
-
-  document.getElementById("answerFeedback")
-    .textContent = "";
-
-  document.getElementById("nextBtn").hidden = true;
-
-  if (!db) {
-    area.textContent = "Chưa kết nối Supabase.";
-    return;
-  }
+  document.getElementById("questionArea").textContent = "Đang tải câu hỏi...";
 
   try {
     const { data: quiz, error: quizError } = await db
@@ -404,16 +669,10 @@ async function startQuiz(quizId) {
     if (quizError) throw quizError;
 
     const isPublic =
-      quiz.visibility === "public" &&
-      quiz.status === "published";
+      quiz.visibility === "public" && quiz.status === "published";
 
-    const isOwner =
-      currentUser?.id === quiz.owner_id;
-
-    if (!isPublic && !isOwner) {
-      throw new Error(
-        "Bạn không có quyền truy cập quiz này."
-      );
+    if (!isPublic && currentUser?.id !== quiz.owner_id) {
+      throw new Error("Bạn không có quyền truy cập quiz này.");
     }
 
     const { data: words, error: wordsError } = await db
@@ -423,46 +682,36 @@ async function startQuiz(quizId) {
 
     if (wordsError) throw wordsError;
 
-    activeQuestions = makeQuestions(words || [], quiz);
+    previewMode = false;
     activeQuiz = quiz;
-    questionIndex = 0;
-    correctAnswers = 0;
-    answeredCurrent = false;
-
-    document.getElementById("quizTitle")
-      .textContent = quiz.title;
-
-    startedAt = Date.now();
-
-    document.getElementById("timer")
-      .textContent = "00:00";
-
-    stopTimer();
-
-    timerInterval = setInterval(() => {
-      const seconds = Math.floor(
-        (Date.now() - startedAt) / 1000
-      );
-
-      document.getElementById("timer")
-        .textContent = formatDuration(seconds);
-    }, 1000);
-
-    renderQuestion();
+    activeQuestions = makeQuestions(words || [], quiz);
+    beginQuiz();
   } catch (error) {
-    console.error(error);
-    area.textContent =
-      "Không mở được quiz: " + error.message;
+    document.getElementById("questionArea").textContent =
+      `Không mở được quiz: ${error.message}`;
   }
 }
 
-// =====================================
-// 9. HIEN THI CAU HOI
-// =====================================
+function beginQuiz() {
+  showPage("play");
+  questionIndex = 0;
+  correctAnswers = 0;
+  startedAt = Date.now();
+
+  document.getElementById("quizTitle").textContent = activeQuiz.title;
+  document.getElementById("timer").textContent = "00:00";
+
+  stopTimer();
+  timerInterval = setInterval(() => {
+    const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    document.getElementById("timer").textContent = formatDuration(seconds);
+  }, 1000);
+
+  renderQuestion();
+}
 
 function renderQuestion() {
   const question = activeQuestions[questionIndex];
-
   const area = document.getElementById("questionArea");
   const feedback = document.getElementById("answerFeedback");
   const next = document.getElementById("nextBtn");
@@ -473,91 +722,68 @@ function renderQuestion() {
   answeredCurrent = false;
 
   const heading = document.createElement("h3");
-  heading.textContent =
-    `Câu ${questionIndex + 1}/${activeQuestions.length}`;
+  heading.textContent = `Câu ${questionIndex + 1}/${activeQuestions.length}`;
 
-  const instruction = document.createElement("p");
-
-  instruction.textContent =
-    question.type === "en_vi"
-      ? "Chọn nghĩa tiếng Việt:"
-      : question.type === "vi_en"
-        ? "Chọn từ tiếng Anh:"
-        : "Chọn từ còn thiếu:";
+  const guide = document.createElement("p");
+  guide.textContent = question.type === "en_vi"
+    ? "Chọn nghĩa tiếng Việt:"
+    : question.type === "vi_en"
+      ? "Chọn từ tiếng Anh:"
+      : "Chọn từ phù hợp để hoàn thành câu:";
 
   const prompt = document.createElement("h3");
   prompt.textContent = question.prompt;
-
-  area.append(heading, instruction, prompt);
+  area.append(heading, guide, prompt);
 
   question.options.forEach(option => {
-    const button = document.createElement("button");
-
-    button.type = "button";
+    const button = makeButton(
+      option,
+      () => answerQuestion(option, button)
+    );
     button.className = "answer-option";
-    button.textContent = option;
-
-    button.style.display = "block";
-    button.style.width = "100%";
-    button.style.margin = "10px 0";
-    button.style.textAlign = "left";
-
-    button.addEventListener("click", () => {
-      if (answeredCurrent) return;
-
-      answeredCurrent = true;
-
-      const correct = option === question.answer;
-
-      if (correct) correctAnswers++;
-
-      feedback.textContent = correct
-        ? "Chính xác!"
-        : "Chưa đúng. Đáp án: " + question.answer;
-
-      area.querySelectorAll(".answer-option")
-        .forEach(answerButton => {
-          answerButton.disabled = true;
-
-          if (
-            answerButton.textContent === question.answer
-          ) {
-            answerButton.style.background = "#dcfce7";
-            answerButton.style.color = "#166534";
-          } else if (
-            answerButton === button && !correct
-          ) {
-            answerButton.style.background = "#fee2e2";
-            answerButton.style.color = "#991b1b";
-          }
-        });
-
-      next.hidden = false;
-
-      next.textContent =
-        questionIndex === activeQuestions.length - 1
-          ? "Xem kết quả"
-          : "Câu tiếp theo";
-    });
-
     area.appendChild(button);
   });
+}
+
+function answerQuestion(option, button) {
+  if (answeredCurrent) return;
+  answeredCurrent = true;
+
+  const question = activeQuestions[questionIndex];
+  const correct = option === question.answer;
+
+  if (correct) correctAnswers++;
+
+  document.getElementById("answerFeedback").textContent = correct
+    ? "Chính xác!"
+    : `Chưa đúng. Đáp án: ${question.answer}`;
+
+  document.querySelectorAll(".answer-option").forEach(answer => {
+    answer.disabled = true;
+    if (answer.textContent === question.answer) {
+      answer.classList.add("correct");
+    }
+  });
+
+  if (!correct) button.classList.add("incorrect");
+
+  const next = document.getElementById("nextBtn");
+  next.textContent = questionIndex === activeQuestions.length - 1
+    ? "Xem kết quả"
+    : "Câu tiếp theo";
+  next.hidden = false;
 }
 
 async function nextQuestion() {
   if (!answeredCurrent) return;
 
-  if (questionIndex + 1 < activeQuestions.length) {
+  if (questionIndex < activeQuestions.length - 1) {
     questionIndex++;
     renderQuestion();
   } else {
     await finishQuiz();
   }
 }
-
-// =====================================
-// 10. KET QUA
-// =====================================
 
 async function finishQuiz() {
   stopTimer();
@@ -567,1018 +793,96 @@ async function finishQuiz() {
     Math.floor((Date.now() - startedAt) / 1000)
   );
 
-  const quiz = activeQuiz;
-
   showPage("results");
 
-  const area = document.getElementById("resultContent");
-  area.replaceChildren();
+  document.getElementById("resultContent").textContent =
+    `${activeQuiz.title}: ${correctAnswers}/${activeQuestions.length} câu đúng. Thời gian: ${formatDuration(seconds)}.`;
 
-  const summary = document.createElement("p");
+  const leaderboard = document.getElementById("leaderboard");
+  const wrap = document.getElementById("leaderboardWrap");
 
-  summary.textContent =
-    `${quiz.title}: ${correctAnswers}/${activeQuestions.length} câu đúng, ` +
-    `${activeQuestions.length - correctAnswers} câu sai. ` +
-    `Thời gian: ${formatDuration(seconds)}.`;
-
-  area.appendChild(summary);
-
-  const note = document.createElement("p");
-  area.appendChild(note);
-
-  if (currentUser) {
-    try {
-      const { error } = await db
-        .from("quiz_attempts")
-        
-.insert({
-  quiz_id: quiz.id,
-  user_id: currentUser.id,
-  score: correctAnswers,
-  correct_count: correctAnswers,
-  wrong_count: activeQuestions.length - correctAnswers,
-  total_questions: activeQuestions.length,
-  duration_seconds: seconds
-});
-
-
-
-      if (error) throw error;
-
-      note.textContent = "Đã lưu kết quả.";
-    } catch (error) {
-      note.textContent =
-        "Chưa lưu được kết quả: " + error.message;
-    }
-  } else {
-    note.textContent =
-      "Bạn đang làm bài với tư cách khách; kết quả chưa được lưu.";
+  if (previewMode) {
+    wrap.hidden = true;
+    return;
   }
 
-  await loadLeaderboard(quiz.id);
-}
-
-// =====================================
-// 11. BANG XEP HANG
-// =====================================
-
-async function loadLeaderboard(quizId) {
-  const area = document.getElementById("leaderboard");
-  if (!area) return;
-
-  area.textContent = "Đang tải bảng xếp hạng...";
-
-  try {
-    const { data, error } = await db
-      .from("leaderboard")
-      .select("*")
-      .eq("quiz_id", quizId)
-      .order("score", { ascending: false })
-      .order("duration_seconds", { ascending: true })
-      .limit(20);
-
-    if (error) throw error;
-
-    area.replaceChildren();
-
-    if (!data?.length) {
-      area.textContent = "Chưa có kết quả xếp hạng.";
-      return;
-    }
-
-    data.forEach((row, index) => {
-      const p = document.createElement("p");
-
-      p.textContent =
-        `${index + 1}. ${row.display_name || "Người chơi"} — ` +
-        `${row.score} điểm — ` +
-        `${formatDuration(row.duration_seconds || 0)}`;
-
-      area.appendChild(p);
-    });
- 
-
-  } catch (error) {
-    console.error("Lỗi bảng xếp hạng:", error);
-    area.textContent =
-      "Không tải được bảng xếp hạng: " + error.message;
-  }
-}
-
-
-
-// =====================================
-// 12. BIEU MAU TAO / CHINH SUA QUIZ
-// =====================================
-
-function showCreatePage() {
-  const area = document.getElementById("createQuizForm");
-  if (!area) return;
-
-  area.replaceChildren();
+  wrap.hidden = false;
 
   if (!currentUser) {
-    area.textContent =
-      "Vui lòng đăng nhập Google để tạo quiz.";
+    leaderboard.textContent = "Đăng nhập để lưu kết quả.";
     return;
   }
-
-  const isEditing = editingQuizId !== null;
-
-  area.innerHTML = `
-    <form id="newQuizForm" class="quiz-form">
-      <h3 id="quizFormHeading">
-        ${isEditing ? "Chỉnh sửa quiz" : "Tạo quiz mới"}
-      </h3>
-
-      <label>Tiêu đề quiz</label>
-      <input
-        id="newQuizTitle"
-        required
-        maxlength="150"
-        placeholder="Ví dụ: Từ vựng Unit 4"
-      >
-
-      <label>Mô tả</label>
-      <textarea
-        id="newQuizDescription"
-        placeholder="Giới thiệu nội dung quiz"
-      ></textarea>
-
-      <label>Chế độ chia sẻ</label>
-      <select id="newQuizVisibility">
-        <option value="private">Riêng tư</option>
-        <option value="public">
-          Công khai (chờ duyệt)
-        </option>
-      </select>
-
-      <h3>Dạng câu hỏi</h3>
-
-      <label>
-        <input
-          type="checkbox"
-          name="questionType"
-          value="en_vi"
-          checked
-        >
-        Tiếng Anh → Tiếng Việt
-      </label>
-
-      <label>
-        <input
-          type="checkbox"
-          name="questionType"
-          value="vi_en"
-        >
-        Tiếng Việt → Tiếng Anh
-      </label>
-
-      <label>
-        <input
-          type="checkbox"
-          name="questionType"
-          value="cloze"
-        >
-        Điền từ vào câu
-      </label>
-
-      <label>Số lượng câu hỏi</label>
-      <input
-        id="newQuizCount"
-        type="number"
-        min="1"
-        value="10"
-        required
-      >
-
-      <h3>Danh sách từ vựng</h3>
-
-      <p>Mỗi dòng nhập theo định dạng:</p>
-      <p>
-        <strong>
-          Tiếng Anh | Nghĩa tiếng Việt | Câu ví dụ
-        </strong>
-      </p>
-
-      <textarea
-        id="newQuizWords"
-        rows="10"
-        required
-        placeholder="achieve | đạt được | She achieved her goal.
-benefit | lợi ích | Reading has many benefits.
-develop | phát triển | We develop new skills."
-      ></textarea>
-
-      <p id="quizSaveMessage"></p>
-
-      <button type="submit" id="saveQuizBtn">
-        ${isEditing ? "Lưu thay đổi" : "Lưu bài quiz"}
-      </button>
-
-      <button
-        type="button"
-        id="cancelQuizBtn"
-      >
-        Hủy
-      </button>
-    </form>
-  `;
-
-  document.getElementById("newQuizForm")
-    .addEventListener("submit", saveNewQuiz);
-
-  document.getElementById("cancelQuizBtn")
-    .addEventListener("click", cancelQuizEdit);
-}
-
-// =====================================
-// 13. DOC DANH SACH TU VUNG
-// =====================================
-
-function parseVocabulary(text) {
-  const lines = text.split(/\r?\n/);
-  const words = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    const parts = line.split("|").map(x => x.trim());
-
-    if (
-      parts.length < 2 ||
-      parts.length > 3 ||
-      !parts[0] ||
-      !parts[1]
-    ) {
-      throw new Error(
-        `Dòng ${i + 1} không đúng định dạng.`
-      );
-    }
-
-    words.push({
-      english: parts[0],
-      vietnamese: parts[1],
-      example: parts[2] || ""
-    });
-  }
-
-  return words;
-}
-
-// =====================================
-// 14. LUU QUIZ MOI HOAC CHINH SUA
-// =====================================
-
-async function saveNewQuiz(event) {
-  event.preventDefault();
-
-  if (savingQuiz) return;
-
-  const message = document.getElementById("quizSaveMessage");
-  const button = document.getElementById("saveQuizBtn");
-
-  if (!db || !currentUser) {
-    message.textContent = "Vui lòng đăng nhập lại.";
-    return;
-  }
-
-  savingQuiz = true;
-  button.disabled = true;
-
-  let createdQuizId = null;
-
-  // Lưu lại ID ngay từ đầu để không bị thay đổi.
-  const quizIdToEdit = editingQuizId;
 
   try {
-    const title = document
-      .getElementById("newQuizTitle")
-      .value.trim();
+    const { error } = await db.from("quiz_attempts").insert({
+      quiz_id: activeQuiz.id,
+      user_id: currentUser.id,
+      score: correctAnswers,
+      correct_count: correctAnswers,
+      wrong_count: activeQuestions.length - correctAnswers,
+      total_questions: activeQuestions.length,
+      duration_seconds: seconds
+    });
 
-    const description = document
-      .getElementById("newQuizDescription")
-      .value.trim();
-
-    const visibility = document
-      .getElementById("newQuizVisibility")
-      .value;
-
-    const count = Number(
-      document.getElementById("newQuizCount").value
-    );
-
-    const questionTypes = Array.from(
-      document.querySelectorAll(
-        'input[name="questionType"]:checked'
-      )
-    ).map(input => input.value);
-
-    const words = parseVocabulary(
-      document.getElementById("newQuizWords").value
-    );
-
-    if (!title) {
-      throw new Error("Bạn chưa nhập tiêu đề.");
-    }
-
-    if (!questionTypes.length) {
-      throw new Error(
-        "Hãy chọn ít nhất một dạng câu hỏi."
-      );
-    }
-
-    if (words.length < 4) {
-      throw new Error(
-        "Cần ít nhất 4 từ vựng để tạo quiz."
-      );
-    }
-
-    if (
-      !Number.isInteger(count) ||
-      count < 1 ||
-      count > words.length
-    ) {
-      throw new Error(
-        "Số câu hỏi phải từ 1 đến số từ vựng đã nhập."
-      );
-    }
-
-    if (
-      questionTypes.includes("cloze") &&
-      words.some(word => !word.example)
-    ) {
-      throw new Error(
-        "Dạng điền từ yêu cầu mỗi từ có câu ví dụ."
-      );
-    }
-
-    const englishCount = new Set(
-      words.map(w => w.english.toLowerCase())
-    ).size;
-
-    const vietnameseCount = new Set(
-      words.map(w => w.vietnamese.toLowerCase())
-    ).size;
-
-    if (
-      questionTypes.some(t =>
-        t === "vi_en" || t === "cloze"
-      ) &&
-      englishCount < 4
-    ) {
-      throw new Error(
-        "Cần ít nhất 4 từ tiếng Anh khác nhau."
-      );
-    }
-
-    if (
-      questionTypes.includes("en_vi") &&
-      vietnameseCount < 4
-    ) {
-      throw new Error(
-        "Cần ít nhất 4 nghĩa tiếng Việt khác nhau."
-      );
-    }
-
-    // ================================
-    // CHINH SUA QUIZ CU
-    // ================================
-
-    if (quizIdToEdit !== null) {
-      message.textContent =
-        "Đang cập nhật quiz cũ...";
-
-      const { error } = await db.rpc(
-        "update_my_quiz",
-        {
-          p_quiz_id: quizIdToEdit,
-          p_title: title,
-          p_description: description,
-          p_visibility: visibility,
-          p_question_count: count,
-          p_question_types: questionTypes,
-          p_words: words
-        }
-      );
-
-      if (error) throw error;
-
-      editingQuizId = null;
-
-      message.textContent =
-        visibility === "public"
-          ? "Đã cập nhật! Quiz đang chờ duyệt lại."
-          : "Đã cập nhật quiz thành công!";
-
-      setTimeout(() => {
-        showPage("myQuizzes");
-      }, 1000);
-
-      return;
-    }
-
-    // ================================
-    // TAO QUIZ MOI
-    // ================================
-
-    message.textContent =
-      "Đang tạo quiz mới...";
-
-    const status =
-      visibility === "public"
-        ? "pending"
-        : "published";
-
-    const { data: quiz, error: quizError } = await db
-      .from("quizzes")
-      .insert({
-        owner_id: currentUser.id,
-        title,
-        description,
-        subject: "english",
-        visibility,
-        status,
-        question_count: count,
-        question_types: questionTypes
-      })
-      .select("id")
-      .single();
-
-    if (quizError) throw quizError;
-
-    createdQuizId = quiz.id;
-
-    const vocabularyRows = words.map(word => ({
-      quiz_id: createdQuizId,
-      english: word.english,
-      vietnamese: word.vietnamese,
-      example: word.example
-    }));
-
-    const { error: wordsError } = await db
-      .from("vocabulary")
-      .insert(vocabularyRows);
-
-    if (wordsError) throw wordsError;
-
-    message.textContent =
-      visibility === "public"
-        ? "Đã tạo quiz! Đang chờ duyệt."
-        : "Đã tạo quiz riêng tư thành công!";
-
-    setTimeout(() => {
-      showPage("myQuizzes");
-    }, 1000);
-
+    if (error) throw error;
+    leaderboard.textContent = "Đã lưu kết quả của bạn.";
   } catch (error) {
-    console.error("Lỗi lưu quiz:", error);
-
-    message.textContent =
-      "Không thể lưu quiz: " + error.message;
-
-    // Chỉ dọn bản ghi khi tạo mới thất bại.
-    // Tuyệt đối không xóa quiz đang chỉnh sửa.
-    if (createdQuizId && quizIdToEdit === null) {
-      const { error: cleanupError } = await db
-        .from("quizzes")
-        .delete()
-        .eq("id", createdQuizId)
-        .eq("owner_id", currentUser.id);
-
-      if (cleanupError) {
-        console.error("Lỗi dọn quiz:", cleanupError);
-        message.textContent +=
-          " Có thể còn quiz chưa hoàn chỉnh.";
-      }
-    }
-
-  } finally {
-    savingQuiz = false;
-    button.disabled = false;
+    leaderboard.textContent = `Chưa lưu được kết quả: ${error.message}`;
   }
 }
-
-// =====================================
-// 15. QUIZ CUA TOI
-// =====================================
 
 async function loadMyQuizzes() {
   const area = document.getElementById("myQuizList");
-  if (!area) return;
-
-  area.replaceChildren();
 
   if (!currentUser) {
-    area.textContent =
-      "Vui lòng đăng nhập Google để xem quiz.";
+    area.textContent = "Hãy đăng nhập Google để xem các quiz đã tạo.";
     return;
   }
 
-  if (!db) {
-    area.textContent = "Chưa kết nối Supabase.";
-    return;
-  }
-
-  area.textContent = "Đang tải quiz của bạn...";
+  area.textContent = "Đang tải quiz...";
 
   try {
     const { data, error } = await db
       .from("quizzes")
-      .select(
-        "id,title,description,visibility,status,question_count,created_at"
-      )
+      .select("id,title,description,visibility,status,question_count")
       .eq("owner_id", currentUser.id)
-      .order("created_at", {
-        ascending: false
-      });
-
-    if (error) throw error;
-
-    area.replaceChildren();
-
-    if (!data?.length) {
-      area.textContent =
-        "Bạn chưa tạo quiz nào.";
-      return;
-    }
-
-    data.forEach(quiz => {
-      const card = document.createElement("div");
-      card.className = "quiz-card";
-
-      const title = document.createElement("h3");
-      title.textContent = quiz.title || "Quiz";
-
-      const description = document.createElement("p");
-      description.textContent = quiz.description || "";
-
-      const visibility = document.createElement("p");
-      visibility.textContent =
-        quiz.visibility === "public"
-          ? "Chế độ: Công khai"
-          : "Chế độ: Riêng tư";
-
-      const status = document.createElement("p");
-
-      if (quiz.status === "pending") {
-        status.textContent =
-          "Trạng thái: Đang chờ duyệt";
-      } else if (quiz.visibility === "private") {
-        status.textContent =
-          "Trạng thái: Riêng tư";
-      } else if (quiz.status === "published") {
-        status.textContent =
-          "Trạng thái: Đã xuất bản";
-      } else {
-        status.textContent =
-          "Trạng thái: " + quiz.status;
-      }
-
-      const count = document.createElement("p");
-      count.textContent =
-        "Số câu hỏi: " + quiz.question_count;
-
-      const editButton = makeButton(
-        "Chỉnh sửa",
-        () => editQuiz(quiz.id)
-      );
-
-      const playButton = makeButton(
-        "Làm thử",
-        () => startQuiz(quiz.id)
-      );
-      
-      const deleteButton = makeButton(
-        "Xóa",
-        () => deleteQuiz(quiz.id, quiz.title)
-      );
-
-    deleteButton.classList.add("delete-quiz-btn");
-
-
-      card.append(
-        title,
-        description,
-        visibility,
-        status,
-        count,
-        editButton,
-        playButton,
-        deleteButton
-      );
-
-      area.appendChild(card);
-    });
-
-  } catch (error) {
-    console.error(error);
-    area.textContent =
-      "Không tải được quiz: " + error.message;
-  }
-}
-
-// =====================================
-// 16. MO QUIZ DE CHINH SUA
-// =====================================
-
-async function deleteQuiz(quizId, quizTitle) {
-  if (!db || !currentUser) {
-    alert("Vui lòng đăng nhập Google.");
-    return;
-  }
-
-  const confirmed = confirm(
-    `Bạn có chắc muốn xóa quiz "${quizTitle}"?\n` +
-    "Thao tác này không thể hoàn tác."
-  );
-
-  if (!confirmed) return;
-
-  try {
-    const { error } = await db.rpc(
-      "delete_my_quiz",
-      { p_quiz_id: quizId }
-    );
-
-    if (error) throw error;
-
-    alert("Đã xóa quiz thành công!");
-    await loadMyQuizzes();
-
-  } catch (error) {
-    console.error("Lỗi xóa quiz:", error);
-    alert("Không thể xóa quiz: " + error.message);
-  }
-}
-
-async function editQuiz(quizId) {
-  if (!db || !currentUser) {
-    alert("Vui lòng đăng nhập Google.");
-    return;
-  }
-
-  try {
-    const { data: quiz, error: quizError } = await db
-      .from("quizzes")
-      .select("*")
-      .eq("id", quizId)
-      .eq("owner_id", currentUser.id)
-      .single();
-
-    if (quizError) throw quizError;
-
-    const { data: words, error: wordsError } = await db
-      .from("vocabulary")
-      .select("english,vietnamese,example")
-      .eq("quiz_id", quizId);
-
-    if (wordsError) throw wordsError;
-
-    // Quan trọng: gán ID trước khi mở form.
-    editingQuizId = quizId;
-
-    // Không được xóa ID trong showPage.
-    showPage("create", {
-      preserveEditing: true
-    });
-
-    const titleInput =
-      document.getElementById("newQuizTitle");
-
-    if (!titleInput) {
-      throw new Error("Không tìm thấy biểu mẫu.");
-    }
-
-    titleInput.value = quiz.title || "";
-
-    document.getElementById("newQuizDescription")
-      .value = quiz.description || "";
-
-    document.getElementById("newQuizVisibility")
-      .value = quiz.visibility || "private";
-
-    document.getElementById("newQuizCount")
-      .value = quiz.question_count || words.length;
-
-    document.getElementById("newQuizWords")
-      .value = (words || []).map(word =>
-        [
-          word.english,
-          word.vietnamese,
-          word.example || ""
-        ].join(" | ")
-      ).join("\n");
-
-    const types = quiz.question_types || ["en_vi"];
-
-    document.querySelectorAll(
-      'input[name="questionType"]'
-    ).forEach(input => {
-      input.checked = types.includes(input.value);
-    });
-
-    document.getElementById("saveQuizBtn")
-      .textContent = "Lưu thay đổi";
-
-    document.getElementById("quizFormHeading")
-      .textContent = "Chỉnh sửa quiz";
-
-  } catch (error) {
-    console.error(error);
-    editingQuizId = null;
-    alert("Không mở được quiz: " + error.message);
-  }
-}
-
-// =====================================
-// 17. LICH SU
-// =====================================
-
-
-
-async function showHistory() {
-  const area = document.getElementById("historyList");
-  if (!area) return;
-
-  if (!currentUser) {
-    area.textContent = "Vui lòng đăng nhập để xem lịch sử.";
-    return;
-  }
-
-  area.textContent = "Đang tải lịch sử...";
-
-  try {
-    const { data, error } = await db
-      .from("quiz_attempts")
-      .select(
-        "quiz_id,score,correct_count,total_questions,duration_seconds,created_at"
-      )
-      .eq("user_id", currentUser.id)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
 
     area.replaceChildren();
 
-    if (!data || data.length === 0) {
-      area.textContent = "Bạn chưa có lịch sử làm bài.";
+    if (!data?.length) {
+      area.textContent = "Bạn chưa tạo quiz nào.";
       return;
     }
 
-    const quizIds = [...new Set(data.map(a => a.quiz_id))];
-
-    const { data: quizzes, error: quizError } = await db
-      .from("quizzes")
-      .select("id,title")
-      .in("id", quizIds);
-
-    if (quizError) throw quizError;
-
-    const quizMap = new Map(
-      (quizzes || []).map(q => [q.id, q.title])
-    );
-
-    data.forEach(attempt => {
-      const card = document.createElement("div");
+    data.forEach(quiz => {
+      const card = document.createElement("article");
       card.className = "quiz-card";
-
-      const title = document.createElement("h3");
-      title.textContent =
-        quizMap.get(attempt.quiz_id) || "Quiz đã xóa";
-
-      const result = document.createElement("p");
-      const correct = attempt.correct_count ?? attempt.score;
-
-      result.textContent = attempt.total_questions
-        ? `Kết quả: ${correct}/${attempt.total_questions} câu đúng`
-        : `Số câu đúng: ${correct}`;
-
-      const duration = document.createElement("p");
-      duration.textContent =
-        "Thời gian: " +
-        formatDuration(attempt.duration_seconds || 0);
-
-      const date = document.createElement("p");
-      date.textContent =
-        "Ngày làm: " +
-        new Date(attempt.created_at).toLocaleString("vi-VN");
-
-      card.append(title, result, duration, date);
+      card.innerHTML =
+        `<h3>${escapeHtml(quiz.title)}</h3>` +
+        `<p>${escapeHtml(quiz.description || "")}</p>` +
+        `<p>${quiz.question_count} câu • ${quiz.visibility === "public"
+          ? quiz.status === "pending" ? "Chờ duyệt" : "Công khai"
+          : "Riêng tư"}</p>`;
+      card.appendChild(makeButton("Làm thử", () => startQuiz(quiz.id)));
       area.appendChild(card);
     });
-
   } catch (error) {
-    console.error("Lỗi lịch sử:", error);
-    area.textContent =
-      "Không tải được lịch sử: " + error.message;
+    area.textContent = `Không tải được quiz: ${error.message}`;
   }
 }
-
-
-  
-
-
-// =====================================
-// 18. KHOI DONG WEBSITE
-// =====================================
-
-// =====================================
-// QUAN TRI VIEN - DUYET QUIZ
-// =====================================
-
-let isQuizAdmin = false;
-
-async function checkQuizAdmin() {
-  isQuizAdmin = false;
-
-  const navButton = document.getElementById("adminNavBtn");
-
-  if (navButton) navButton.hidden = true;
-
-  if (!db || !currentUser) return false;
-
-  try {
-    const { data, error } = await db
-      .from("quiz_admins")
-      .select("user_id")
-      .eq("user_id", currentUser.id)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    isQuizAdmin = Boolean(data);
-
-    if (navButton) {
-      navButton.hidden = !isQuizAdmin;
-    }
-
-    return isQuizAdmin;
-
-  } catch (error) {
-    console.error("Lỗi kiểm tra quản trị viên:", error);
-    return false;
-  }
-}
-
-async function loadPendingQuizzes() {
-  const area = document.getElementById("pendingQuizList");
-  if (!area) return;
-
-  area.textContent = "Đang tải quiz chờ duyệt...";
-
-  if (!db || !currentUser) {
-    area.textContent = "Vui lòng đăng nhập.";
-    return;
-  }
-
-  try {
-    const { data: quizzes, error } = await db.rpc(
-      "get_pending_quizzes"
-    );
-
-    if (error) throw error;
-
-    area.replaceChildren();
-
-    if (!quizzes?.length) {
-      area.textContent =
-        "Hiện không có quiz nào đang chờ duyệt.";
-      return;
-    }
-
-    quizzes.forEach(quiz => {
-      const card = document.createElement("div");
-      card.className = "quiz-card admin-quiz-card";
-
-      const title = document.createElement("h3");
-      title.textContent = quiz.title || "Quiz";
-
-      const description = document.createElement("p");
-      description.textContent =
-        quiz.description || "Không có mô tả.";
-
-      const count = document.createElement("p");
-      count.textContent =
-        "Số câu hỏi: " + quiz.question_count;
-
-      const date = document.createElement("p");
-      date.textContent =
-        "Ngày gửi: " +
-        new Date(quiz.created_at).toLocaleString("vi-VN");
-
-      const buttons = document.createElement("div");
-      buttons.className = "quiz-actions";
-
-      const approve = document.createElement("button");
-      approve.type = "button";
-      approve.textContent = "Duyệt";
-      approve.className = "approve-quiz-btn";
-
-      approve.addEventListener("click", () => {
-        reviewQuiz(quiz.id, true);
-      });
-
-      const reject = document.createElement("button");
-      reject.type = "button";
-      reject.textContent = "Từ chối";
-      reject.className = "reject-quiz-btn";
-
-      reject.addEventListener("click", () => {
-        reviewQuiz(quiz.id, false);
-      });
-
-      buttons.append(approve, reject);
-
-      card.append(
-        title,
-        description,
-        count,
-        date,
-        buttons
-      );
-
-      area.appendChild(card);
-    });
-
-  } catch (error) {
-    console.error("Lỗi tải quiz chờ duyệt:", error);
-    area.textContent =
-      "Không tải được danh sách: " + error.message;
-  }
-}
-
-async function reviewQuiz(quizId, approve) {
-  if (!db || !currentUser) {
-    alert("Vui lòng đăng nhập.");
-    return;
-  }
-
-  const action = approve ? "duyệt" : "từ chối";
-
-  if (!confirm(`Bạn có chắc muốn ${action} quiz này?`)) {
-    return;
-  }
-
-  try {
-    const { error } = await db.rpc(
-      "review_public_quiz",
-      {
-        p_quiz_id: quizId,
-        p_approve: approve
-      }
-    );
-
-    if (error) throw error;
-
-    alert(
-      approve
-        ? "Đã duyệt và xuất bản quiz!"
-        : "Đã từ chối quiz."
-    );
-
-    await loadPendingQuizzes();
-
-  } catch (error) {
-    console.error("Lỗi duyệt quiz:", error);
-    alert("Không thể xử lý quiz: " + error.message);
-  }
-}
-
 
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("VOCAB QUIZ đang khởi động...");
-
-  const connected = connectSupabase();
-
-  if (connected) {
-    db.auth.onAuthStateChange((event, session) => {
+  if (connectSupabase()) {
+    db.auth.onAuthStateChange((_event, session) => {
       currentUser = session?.user || null;
       updateLoginButton();
-
-      setTimeout(() => {
-        checkQuizAdmin();
-      }, 0);
     });
-
     await checkUser();
   }
 
-  document.getElementById("nextBtn")
-    ?.addEventListener("click", nextQuestion);
-
-  // Đảm bảo nút Tạo quiz mở biểu mẫu mới
-  document.querySelectorAll(
-    'button[onclick="showPage(\'create\')"]'
-  ).forEach(button => {
-    button.setAttribute(
-      "onclick",
-      "openNewQuiz()"
-    );
-  });
-
+  document.getElementById("nextBtn").addEventListener("click", nextQuestion);
   showPage("home");
-
-  console.log("VOCAB QUIZ đã sẵn sàng.");
 });

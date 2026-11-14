@@ -1,57 +1,55 @@
-
 <!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VOCAB QUIZ - Học từ vựng</title>
+  <title>Quiz học tập</title>
   <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="js/app.js" defer></script>
 </head>
 <body>
   <header class="site-header">
-    <h1>VOCAB QUIZ</h1>
-    <nav>
-      <button onclick="showPage('home')">Trang chủ</button>
-      <button onclick="showPage('create')">Tạo quiz</button>
-      <button onclick="showPage('myQuizzes')">Quiz của tôi</button>
-      <button
-  id="adminNavBtn"
-  type="button"
-  onclick="showPage('admin')"
-  hidden
->
-  Duyệt quiz
-      </button>
-      <button onclick="showPage('history')">Lịch sử</button>
-      <button id="loginBtn" onclick="loginGoogle()">
-        Đăng nhập Google
-      </button>
+    <div>
+      <h1>QUIZ HỌC TẬP</h1>
+      <p class="tagline">Chọn lớp, chọn môn, học từ đề cương</p>
+    </div>
+    <nav aria-label="Điều hướng chính">
+      <button type="button" onclick="showPage('home')">Trang chủ</button>
+      <button type="button" onclick="openCreate()">Tạo quiz</button>
+      <button type="button" onclick="showPage('myQuizzes')">Quiz của tôi</button>
+      <button id="loginBtn" type="button" onclick="loginGoogle()">Đăng nhập Google</button>
     </nav>
   </header>
 
   <main>
     <section id="home" class="page">
-      <h2>Chọn môn học</h2>
-      <div class="subjects">
-        <button onclick="showPage('library')">
-          Tiếng Anh
-        </button>
-        <button disabled>Sinh học (sắp ra mắt)</button>
-        <button disabled>Lịch sử (sắp ra mắt)</button>
-      </div>
+      <p class="eyebrow">Bước 1</p>
+      <h2>Chọn lớp học</h2>
+      <p>Chọn lớp trước, sau đó chọn môn để học hoặc tạo quiz.</p>
+      <div id="gradeList" class="selection-grid"></div>
+    </section>
+
+    <section id="subjects" class="page" hidden>
+      <button type="button" class="back-link" onclick="showPage('home')">← Đổi lớp</button>
+      <p class="eyebrow">Bước 2</p>
+      <h2 id="subjectHeading">Chọn môn học</h2>
+      <p id="subjectIntro"></p>
+      <div id="subjectList" class="selection-grid"></div>
     </section>
 
     <section id="library" class="page" hidden>
-      <h2>Kho quiz tiếng Anh</h2>
-      <p>Khám phá các bài quiz từ vựng.</p>
-      <div id="quizList"></div>
+      <button type="button" class="back-link" onclick="showPage('subjects')">← Đổi môn</button>
+      <h2 id="libraryHeading">Kho quiz</h2>
+      <p id="libraryIntro"></p>
+      <div id="quizList" class="card-list"></div>
     </section>
 
     <section id="create" class="page" hidden>
-      <h2>Tạo bài quiz</h2>
-      <p>Đăng nhập Google để tạo và chia sẻ quiz.</p>
+      <button type="button" class="back-link" onclick="showPage('subjects')">← Đổi môn</button>
+      <h2>Tạo quiz từ đề cương</h2>
+      <p id="createContext">Chọn lớp và môn trước khi tạo quiz.</p>
       <div id="createQuizForm"></div>
     </section>
 
@@ -59,47 +57,27 @@
       <h2 id="quizTitle">Làm bài quiz</h2>
       <p>Thời gian: <span id="timer">00:00</span></p>
       <div id="questionArea"></div>
-      <div id="answerFeedback"></div>
-      <button id="nextBtn" hidden>Câu tiếp theo</button>
+      <div id="answerFeedback" aria-live="polite"></div>
+      <button id="nextBtn" type="button" hidden>Câu tiếp theo</button>
     </section>
 
     <section id="results" class="page" hidden>
       <h2>Kết quả bài làm</h2>
       <div id="resultContent"></div>
-      <h3>Bảng xếp hạng</h3>
-      <div id="leaderboard"></div>
+      <div id="leaderboardWrap">
+        <h3>Bảng xếp hạng</h3>
+        <div id="leaderboard"></div>
+      </div>
     </section>
 
-    <section id="history" class="page" hidden>
-      <h2>Lịch sử làm quiz</h2>
-      <div id="historyList"></div>
+    <section id="myQuizzes" class="page" hidden>
+      <h2>Quiz của tôi</h2>
+      <p>Quản lý các quiz bạn đã lưu.</p>
+      <button type="button" onclick="openCreate()">+ Tạo quiz mới</button>
+      <div id="myQuizList" class="card-list"></div>
     </section>
-    
-<section id="myQuizzes" class="page" hidden>
-  <h2>Quiz của tôi</h2>
-  <p>Quản lý các bài quiz bạn đã tạo.</p>
-
-  <button type="button" onclick="showPage('create')">
-    + Tạo quiz mới
-  </button>
-
-  <h3>Danh sách quiz đã tạo</h3>
-  <div id="myQuizList"></div>
-</section>
-    
-<section id="admin" class="page" hidden>
-  <h2>Duyệt quiz công khai</h2>
-  <p>Danh sách các quiz đang chờ quản trị viên phê duyệt.</p>
-
-  <div id="pendingQuizList">
-    Đang tải...
-  </div>
-</section>
-
   </main>
 
-  <footer>
-    <p>VOCAB QUIZ - Học từ vựng hiệu quả</p>
-  </footer>
+  <footer>QUIZ HỌC TẬP</footer>
 </body>
 </html>
