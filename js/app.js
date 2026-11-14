@@ -27,6 +27,8 @@ let catalogClasses = [];
 let catalogSubjects = [];
 let scannedVocabulary = [];
 let scannedDocumentTitle = "";
+let scannedBiologyLessons = [];
+let selectedBiologyLesson = null;
 let activeQuiz = null;
 let activeQuestions = [];
 let questionIndex = 0;
@@ -225,6 +227,11 @@ function openCreate() {
     return;
   }
 
+  if (!["english", "biology"].includes(selectedSubject)) {
+    alert("Môn này chưa có mẫu đề cương để tạo quiz.");
+    return;
+  }
+
   showPage("create");
 }
 
@@ -377,6 +384,11 @@ async function loadQuizzes() {
 }
 
 function renderCreateForm() {
+  if (selectedSubject === "biology") {
+    renderBiologyCreateForm();
+    return;
+  }
+
   const area = document.getElementById("createQuizForm");
 
   document.getElementById("createContext").textContent =
@@ -437,6 +449,373 @@ function normalizeHeader(value) {
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function renderBiologyCreateForm() {
+  const area = document.getElementById("createQuizForm");
+  document.getElementById("createContext").textContent =
+    `Lớp ${selectedGrade} • Sinh • ${selectedSectionTitle} • Mỗi quiz dùng toàn bộ câu hỏi của một bài.`;
+
+  area.innerHTML = `
+    <form id="biologyQuizForm" class="quiz-form">
+      <label for="biologyQuizTitle">Tên quiz</label>
+      <input id="biologyQuizTitle" maxlength="150" required
+        placeholder="Ví dụ: Bài 4 - Sinh học 10">
+
+      <label for="biologyOutlineFile">Tệp đề cương Sinh học</label>
+      <input id="biologyOutlineFile" type="file" accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
+      <p class="form-help">Nhận .docx và .pdf. Tệp .doc cũ cần được lưu lại thành .docx trước khi tải.</p>
+
+      <div id="biologyScanSummary" class="scan-summary" hidden></div>
+      <label for="biologyLessonSelect">Tạo quiz cho bài</label>
+      <select id="biologyLessonSelect" disabled required>
+        <option value="">Tải đề cương để chọn bài</option>
+      </select>
+      <p id="biologyLessonHint" class="form-help">Quiz gồm toàn bộ câu trắc nghiệm và đúng/sai của bài đã chọn.</p>
+
+      <label for="biologyQuizVisibility">Chia sẻ</label>
+      <select id="biologyQuizVisibility">
+        <option value="private">Riêng tư</option>
+        <option value="public">Công khai</option>
+      </select>
+
+      <div class="form-actions">
+        <button type="button" id="previewBiologyBtn" disabled>Làm thử toàn bộ bài</button>
+        <button type="submit" id="saveBiologyBtn" disabled>Lưu quiz</button>
+      </div>
+      <p id="biologySaveMessage" aria-live="polite"></p>
+    </form>
+  `;
+
+  scannedBiologyLessons = [];
+  selectedBiologyLesson = null;
+  document.getElementById("biologyOutlineFile")
+    .addEventListener("change", readBiologyOutlineFile);
+  document.getElementById("biologyLessonSelect")
+    .addEventListener("change", selectBiologyLesson);
+  document.getElementById("biologyQuizForm")
+    .addEventListener("submit", saveNewQuiz);
+  document.getElementById("previewBiologyBtn")
+    .addEventListener("click", startBiologyPreview);
+}
+
+function markedParagraph(paragraph) {
+  const namespace =
+    "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  return directChildren(paragraph, "r").map(run => {
+    const text = Array.from(run.getElementsByTagNameNS(namespace, "t"))
+      .map(node => node.textContent).join("");
+    if (!text) return "";
+    const underlined = Boolean(
+      run.querySelector("u") ||
+      run.getElementsByTagNameNS(namespace, "u").length
+    );
+    return underlined ? `[[U]]${text}[[/U]]` : text;
+  }).join("").replace(/\s+/g, " ").trim();
+}
+
+function withoutMarks(text) {
+  return text.replace(/\[\[\/?U\]\]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function lessonTitle(text) {
+  const match = withoutMarks(text).match(/^BÀI\s*(\d+)\b/i);
+  return match ? `Bài ${match[1]}` : "";
+}
+
+function questionTypeFromHeading(text) {
+  const clean = withoutMarks(text).toUpperCase();
+  if (/PHẦN\s*(II|2).*ĐÚNG\s*SAI/.test(clean)) return "true_false";
+  if (/PHẦN\s*(I|1).*TRẮC\s*NGHIỆM/.test(clean)) return "multiple_choice";
+  return "";
+}
+
+function parseBiologyBlocks(paragraphs) {
+  const lessons = new Map();
+  let lesson = "";
+  let type = "";
+  let block = null;
+
+  const finish = () => {
+    if (!block || !lesson || !type) return;
+    const question = type === "multiple_choice"
+      ? parseBiologyChoice(block.marked)
+      : parseBiologyTrueFalse(block.lines);
+    if (question) {
+      question.lesson = lesson;
+      if (!lessons.has(lesson)) lessons.set(lesson, []);
+      lessons.get(lesson).push(question);
+    }
+  };
+
+  paragraphs.forEach(marked => {
+    const clean = withoutMarks(marked);
+    const headingType = questionTypeFromHeading(marked);
+    if (headingType) {
+      finish();
+      block = null;
+      type = headingType;
+      return;
+    }
+
+    const newLesson = lessonTitle(marked);
+    if (newLesson) {
+      finish();
+      block = null;
+      lesson = newLesson;
+      return;
+    }
+
+    if (/^Câu\s*\d+/i.test(clean)) {
+      finish();
+      block = { marked, lines: [marked] };
+      return;
+    }
+
+    if (block) {
+      block.marked += "\n" + marked;
+      block.lines.push(marked);
+    }
+  });
+
+  finish();
+
+  return [...lessons.entries()].map(([title, questions]) => ({
+    title,
+    questions
+  })).filter(lessonItem => lessonItem.questions.length);
+}
+
+function markedTextState(marked) {
+  let plain = "";
+  const underlined = [];
+  let isUnderlined = false;
+  const tokens = marked.split(/(\[\[U\]\]|\[\[\/U\]\])/);
+  tokens.forEach(token => {
+    if (token === "[[U]]") {
+      isUnderlined = true;
+    } else if (token === "[[/U]]") {
+      isUnderlined = false;
+    } else {
+      plain += token;
+      underlined.push(...Array.from(token, () => isUnderlined));
+    }
+  });
+  return { plain, underlined };
+}
+
+function parseBiologyChoice(marked) {
+  const state = markedTextState(marked);
+  const clean = state.plain;
+  const matches = [...clean.matchAll(/(?:^|\s)([A-D])\s*[.)]/g)];
+  if (matches.length < 4) return null;
+  const first = matches[0].index + matches[0][0].lastIndexOf(matches[0][1]);
+  const prompt = clean.slice(0, first)
+    .replace(/^Câu\s*\d+\s*[.:]?\s*/i, "").trim();
+  const options = matches.slice(0, 4).map((match, index) => {
+    const start = match.index + match[0].lastIndexOf(match[1]);
+    const end = index < 3
+      ? matches[index + 1].index + matches[index + 1][0].lastIndexOf(matches[index + 1][1])
+      : clean.length;
+    const key = match[1];
+    const text = clean.slice(start, end)
+      .replace(/^[A-D]\s*[.)]\s*/i, "").trim();
+    const hasUnderline = state.underlined.slice(start, end).some(Boolean);
+    return { key, text, correct: hasUnderline || /\*\s*$/.test(text) };
+  });
+  const correct = options.filter(option => option.correct).map(option => option.key);
+  return prompt && options.length === 4 && correct.length
+    ? { type: "multiple_choice", prompt, options, correct_answers: correct }
+    : null;
+}
+
+function parseBiologyTrueFalse(lines) {
+  const first = withoutMarks(lines[0] || "")
+    .replace(/^Câu\s*\d+\s*[.:]?\s*/i, "").trim();
+  const assertions = [];
+
+  lines.slice(1).forEach(line => {
+    const clean = withoutMarks(line);
+    const match = clean.match(/^([a-d])\s*[.)]\s*(.+)/i);
+    if (!match) return;
+    assertions.push({
+      key: match[1].toLowerCase(),
+      text: match[2].trim(),
+      correct: line.includes("[[U]]") || /\*\s*$/.test(clean)
+    });
+  });
+
+  return first && assertions.length
+    ? {
+      type: "true_false",
+      prompt: first,
+      options: assertions,
+      correct_answers: assertions.map(item => item.correct ? "true" : "false")
+    }
+    : null;
+}
+
+async function parseBiologyDocx(file) {
+  if (!window.JSZip) throw new Error("Không tải được bộ đọc Word.");
+  const zip = await window.JSZip.loadAsync(await file.arrayBuffer());
+  const documentFile = zip.file("word/document.xml");
+  if (!documentFile) throw new Error("Tệp Word không hợp lệ.");
+  const xml = new DOMParser().parseFromString(
+    await documentFile.async("text"), "application/xml"
+  );
+  const namespace =
+    "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const paragraphs = Array.from(xml.getElementsByTagNameNS(namespace, "p"))
+    .map(markedParagraph).filter(Boolean);
+  return parseBiologyBlocks(paragraphs);
+}
+
+async function parseBiologyPdf(file) {
+  if (!window.pdfjsLib) throw new Error("Không tải được bộ đọc PDF.");
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const paragraphs = [];
+  for (let number = 1; number <= pdf.numPages; number++) {
+    const page = await pdf.getPage(number);
+    const content = await page.getTextContent();
+    const lines = new Map();
+    content.items.filter(item => item.str).forEach(item => {
+      const y = Math.round(item.transform[5]);
+      if (!lines.has(y)) lines.set(y, []);
+      lines.get(y).push(item);
+    });
+    [...lines.entries()]
+      .sort((first, second) => second[0] - first[0])
+      .forEach(([, items]) => {
+        paragraphs.push(items
+          .sort((first, second) => first.transform[4] - second.transform[4])
+          .map(item => item.str).join(" ").replace(/\s+/g, " ").trim());
+      });
+  }
+  return parseBiologyBlocks(paragraphs);
+}
+
+async function readBiologyOutlineFile(event) {
+  const message = document.getElementById("biologySaveMessage");
+  const summary = document.getElementById("biologyScanSummary");
+  const select = document.getElementById("biologyLessonSelect");
+  const preview = document.getElementById("previewBiologyBtn");
+  const save = document.getElementById("saveBiologyBtn");
+  const file = event.target.files?.[0];
+  scannedBiologyLessons = [];
+  selectedBiologyLesson = null;
+  select.disabled = true;
+  preview.disabled = true;
+  save.disabled = true;
+  summary.hidden = true;
+  if (!file) return;
+  if (/\.doc$/i.test(file.name)) {
+    message.textContent = "Hãy lưu tệp .doc thành .docx trước khi tải.";
+    return;
+  }
+  if (!/\.(docx|pdf)$/i.test(file.name)) {
+    message.textContent = "Chỉ nhận tệp .docx hoặc .pdf.";
+    return;
+  }
+  message.textContent = "Đang quét đề cương...";
+  try {
+    scannedBiologyLessons = /\.pdf$/i.test(file.name)
+      ? await parseBiologyPdf(file)
+      : await parseBiologyDocx(file);
+    if (!scannedBiologyLessons.length) throw new Error("Không tìm thấy câu hỏi có đáp án. Với PDF, hãy dùng dấu * để đánh dấu đáp án đúng.");
+    select.replaceChildren(new Option("Chọn bài", ""));
+    scannedBiologyLessons.forEach(item => {
+      const multiple = item.questions.filter(q => q.type === "multiple_choice").length;
+      const tf = item.questions.filter(q => q.type === "true_false").length;
+      select.add(new Option(`${item.title} — ${multiple} trắc nghiệm, ${tf} đúng/sai`, item.title));
+    });
+    select.disabled = false;
+    summary.textContent = `Đã quét ${scannedBiologyLessons.length} bài. Chọn một bài để tạo quiz toàn bộ câu hỏi.`;
+    summary.hidden = false;
+    message.textContent = "";
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+function selectBiologyLesson(event) {
+  selectedBiologyLesson = scannedBiologyLessons
+    .find(item => item.title === event.target.value) || null;
+  const enabled = Boolean(selectedBiologyLesson?.questions.length);
+  document.getElementById("previewBiologyBtn").disabled = !enabled;
+  document.getElementById("saveBiologyBtn").disabled = !enabled;
+  if (enabled && !document.getElementById("biologyQuizTitle").value.trim()) {
+    document.getElementById("biologyQuizTitle").value =
+      `${selectedBiologyLesson.title} - Sinh học 10`;
+  }
+}
+
+function biologyQuestionRows(quizId) {
+  return selectedBiologyLesson.questions.map((question, index) => ({
+    quiz_id: quizId,
+    question_type: question.type,
+    prompt: question.prompt,
+    options: question.options,
+    correct_answers: question.correct_answers,
+    sort_order: index + 1
+  }));
+}
+
+function startBiologyPreview() {
+  const title = document.getElementById("biologyQuizTitle").value.trim();
+  if (!title || !selectedBiologyLesson) {
+    document.getElementById("biologySaveMessage").textContent = "Hãy nhập tên quiz và chọn bài.";
+    return;
+  }
+  previewMode = true;
+  activeQuiz = { id: null, title: `${title} (bản thử)` };
+  activeQuestions = selectedBiologyLesson.questions.map(question => ({
+    ...question,
+    answer: question.correct_answers
+  }));
+  beginQuiz();
+}
+
+async function saveBiologyQuiz(event) {
+  event.preventDefault();
+  const message = document.getElementById("biologySaveMessage");
+  const button = document.getElementById("saveBiologyBtn");
+  const title = document.getElementById("biologyQuizTitle").value.trim();
+  if (!title || !selectedBiologyLesson) {
+    message.textContent = "Hãy nhập tên quiz và chọn bài.";
+    return;
+  }
+  if (!db || !currentUser) {
+    message.textContent = "Hãy đăng nhập Google trước khi lưu quiz.";
+    return;
+  }
+  try {
+    button.disabled = true;
+    message.textContent = "Đang lưu quiz...";
+    const visibility = document.getElementById("biologyQuizVisibility").value;
+    const { data: quiz, error } = await db.from("quizzes").insert({
+      owner_id: currentUser.id,
+      title,
+      description: selectedBiologyLesson.title,
+      subject: "biology",
+      class_code: selectedGrade,
+      section_id: selectedSectionId,
+      visibility,
+      status: "published",
+      question_count: selectedBiologyLesson.questions.length,
+      question_types: ["multiple_choice", "true_false"]
+    }).select("id").single();
+    if (error) throw error;
+    const { error: questionsError } = await db.from("quiz_questions")
+      .insert(biologyQuestionRows(quiz.id));
+    if (questionsError) throw questionsError;
+    message.textContent = visibility === "public" ? "Đã tạo quiz công khai." : "Đã lưu quiz riêng tư.";
+  } catch (error) {
+    message.textContent = `Không thể lưu quiz: ${error.message}`;
+  } finally {
+    button.disabled = !selectedBiologyLesson;
+  }
 }
 
 function cellText(cell) {
@@ -660,6 +1039,11 @@ function startPreviewQuiz() {
 
 async function saveNewQuiz(event) {
   event.preventDefault();
+
+  if (selectedSubject === "biology") {
+    await saveBiologyQuiz(event);
+    return;
+  }
   const message = document.getElementById("quizSaveMessage");
   const button = document.getElementById("saveQuizBtn");
 
@@ -788,7 +1172,7 @@ async function startQuiz(quizId) {
     const { data: quiz, error: quizError } = await db
       .from("quizzes")
       .select(
-        "id,title,question_count,question_types,visibility,status,owner_id"
+        "id,title,subject,question_count,question_types,visibility,status,owner_id"
       )
       .eq("id", quizId)
       .single();
@@ -802,16 +1186,32 @@ async function startQuiz(quizId) {
       throw new Error("Bạn không có quyền truy cập quiz này.");
     }
 
-    const { data: words, error: wordsError } = await db
-      .from("vocabulary")
-      .select("english,vietnamese,example")
-      .eq("quiz_id", quizId);
-
-    if (wordsError) throw wordsError;
-
     previewMode = false;
     activeQuiz = quiz;
-    activeQuestions = makeQuestions(words || [], quiz);
+
+    if (quiz.subject === "biology") {
+      const { data: rows, error: questionsError } = await db
+        .from("quiz_questions")
+        .select("question_type,prompt,options,correct_answers,sort_order")
+        .eq("quiz_id", quizId)
+        .order("sort_order");
+      if (questionsError) throw questionsError;
+      activeQuestions = (rows || []).map(row => ({
+        type: row.question_type,
+        prompt: row.prompt,
+        options: row.options,
+        answer: row.correct_answers
+      }));
+    } else {
+      const { data: words, error: wordsError } = await db
+        .from("vocabulary")
+        .select("english,vietnamese,example")
+        .eq("quiz_id", quizId);
+      if (wordsError) throw wordsError;
+      activeQuestions = makeQuestions(words || [], quiz);
+    }
+
+    if (!activeQuestions.length) throw new Error("Quiz chưa có câu hỏi.");
     beginQuiz();
   } catch (error) {
     document.getElementById("questionArea").textContent =
@@ -852,7 +1252,11 @@ function renderQuestion() {
   heading.textContent = `Câu ${questionIndex + 1}/${activeQuestions.length}`;
 
   const guide = document.createElement("p");
-  guide.textContent = question.type === "en_vi"
+  guide.textContent = question.type === "multiple_choice"
+    ? "Chọn một đáp án đúng:"
+    : question.type === "true_false"
+      ? "Chọn Đúng hoặc Sai cho từng ý:"
+      : question.type === "en_vi"
     ? "Chọn nghĩa tiếng Việt:"
     : question.type === "vi_en"
       ? "Chọn từ tiếng Anh:"
@@ -862,14 +1266,87 @@ function renderQuestion() {
   prompt.textContent = question.prompt;
   area.append(heading, guide, prompt);
 
+  if (question.type === "true_false") {
+    renderTrueFalseQuestion(question, area);
+    return;
+  }
+
   question.options.forEach(option => {
+    const value = typeof option === "string"
+      ? option
+      : `${option.key}. ${option.text}`;
     const button = makeButton(
-      option,
-      () => answerQuestion(option, button)
+      value,
+      () => answerQuestion(value, button)
     );
     button.className = "answer-option";
     area.appendChild(button);
   });
+}
+
+function renderTrueFalseQuestion(question, area) {
+  const selections = {};
+
+  question.options.forEach(assertion => {
+    const row = document.createElement("div");
+    row.className = "true-false-row";
+    const text = document.createElement("p");
+    text.textContent = `${assertion.key}. ${assertion.text}`;
+    const controls = document.createElement("div");
+    controls.className = "true-false-controls";
+
+    ["true", "false"].forEach(value => {
+      const button = makeButton(value === "true" ? "Đúng" : "Sai", () => {
+        if (answeredCurrent) return;
+        selections[assertion.key] = value;
+        controls.querySelectorAll("button").forEach(item => {
+          item.classList.toggle("selected-answer", item === button);
+        });
+      });
+      controls.appendChild(button);
+    });
+
+    row.append(text, controls);
+    area.appendChild(row);
+  });
+
+  const check = makeButton("Kiểm tra", () => {
+    if (Object.keys(selections).length !== question.options.length) {
+      document.getElementById("answerFeedback").textContent =
+        "Hãy chọn Đúng hoặc Sai cho tất cả các ý.";
+      return;
+    }
+
+    answeredCurrent = true;
+    const allCorrect = question.options.every((assertion, index) =>
+      selections[assertion.key] === question.answer[index]
+    );
+    if (allCorrect) correctAnswers++;
+
+    area.querySelectorAll("button").forEach(button => {
+      button.disabled = true;
+    });
+    area.querySelectorAll(".true-false-row").forEach((row, index) => {
+      const expected = question.answer[index] === "true" ? "Đúng" : "Sai";
+      const chosen = selections[question.options[index].key] === "true"
+        ? "Đúng" : "Sai";
+      row.classList.add(chosen === expected ? "correct" : "incorrect");
+      const note = document.createElement("small");
+      note.textContent = `Đáp án: ${expected}`;
+      row.appendChild(note);
+    });
+
+    document.getElementById("answerFeedback").textContent = allCorrect
+      ? "Chính xác!"
+      : "Có ý chưa đúng. Xem đáp án bên dưới mỗi ý.";
+
+    const next = document.getElementById("nextBtn");
+    next.textContent = questionIndex === activeQuestions.length - 1
+      ? "Xem kết quả" : "Câu tiếp theo";
+    next.hidden = false;
+  });
+  check.className = "check-true-false";
+  area.appendChild(check);
 }
 
 function answerQuestion(option, button) {
@@ -877,17 +1354,21 @@ function answerQuestion(option, button) {
   answeredCurrent = true;
 
   const question = activeQuestions[questionIndex];
-  const correct = option === question.answer;
+  const correct = Array.isArray(question.answer)
+    ? question.options.find(item => `${item.key}. ${item.text}` === option)?.key === question.answer[0]
+    : option === question.answer;
 
   if (correct) correctAnswers++;
 
   document.getElementById("answerFeedback").textContent = correct
     ? "Chính xác!"
-    : `Chưa đúng. Đáp án: ${question.answer}`;
+    : `Chưa đúng. Đáp án: ${Array.isArray(question.answer) ? question.answer.join(", ") : question.answer}`;
 
   document.querySelectorAll(".answer-option").forEach(answer => {
     answer.disabled = true;
-    if (answer.textContent === question.answer) {
+    if (answer.textContent === question.answer ||
+        (Array.isArray(question.answer) &&
+          answer.textContent.startsWith(`${question.answer[0]}.`))) {
       answer.classList.add("correct");
     }
   });

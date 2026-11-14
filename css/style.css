@@ -237,6 +237,43 @@ fieldset label { font-weight: 400; }
 .answer-option.correct { color: var(--success); background: #dcfce7; }
 .answer-option.incorrect { color: var(--danger); background: #fee2e2; }
 
+.true-false-row {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.true-false-row p { margin: 0 0 10px; }
+
+.true-false-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(90px, 130px));
+  gap: 8px;
+}
+
+.true-false-controls button {
+  color: var(--text);
+  background: #eef2ff;
+}
+
+.true-false-controls button.selected-answer {
+  color: #fff;
+  background: var(--primary);
+}
+
+.true-false-row.correct {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.true-false-row.incorrect {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.check-true-false { margin-top: 12px; }
+
 #answerFeedback {
   min-height: 1.6em;
   margin: 14px 0;
