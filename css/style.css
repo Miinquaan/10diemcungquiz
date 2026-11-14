@@ -39,9 +39,20 @@ body {
 }
 
 .tagline {
+  display: block;
   margin: 2px 0 0;
   color: var(--muted);
   font-size: .92rem;
+  font-weight: 400;
+}
+
+.brand-home, .brand-home:hover:not(:disabled) {
+  padding: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  text-align: left;
+  transform: none;
 }
 
 nav {
@@ -384,6 +395,7 @@ footer {
 
 @media (max-width: 680px) {
   .site-header { justify-content: center; text-align: center; }
+  .brand-home { text-align: center; }
   nav { justify-content: center; }
   nav button { padding: 9px 10px; font-size: .86rem; }
   main { width: min(100% - 20px, 1060px); margin: 18px auto; }
