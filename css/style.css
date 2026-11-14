@@ -237,6 +237,22 @@ fieldset label { font-weight: 400; }
 .answer-option.correct { color: var(--success); background: #dcfce7; }
 .answer-option.incorrect { color: var(--danger); background: #fee2e2; }
 
+.question-image {
+  margin: 16px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.question-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
 .true-false-row {
   margin: 12px 0;
   padding: 14px;

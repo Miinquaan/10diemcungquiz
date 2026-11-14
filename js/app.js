@@ -3,6 +3,7 @@
 const SUPABASE_URL = "https://tdekbojbfnttitllfltl.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_GnRVaCZsV43UDnJHNon9ng_GSvUe6YT";
 const WEBSITE_URL = "https://miinquaan.github.io/10diemcungquiz/";
+const BIOLOGY_IMAGE_BUCKET = "biology-question-images";
 
 const BLOCKS = ["10", "11", "12"];
 const CLASSES_PER_BLOCK = 12;
@@ -37,6 +38,7 @@ let startedAt = 0;
 let timerInterval = null;
 let answeredCurrent = false;
 let previewMode = false;
+let metafileRendererPromise = null;
 
 function showPage(pageId) {
   const target = document.getElementById(pageId);
@@ -464,7 +466,7 @@ function renderBiologyCreateForm() {
 
       <label for="biologyOutlineFile">Tệp đề cương Sinh học</label>
       <input id="biologyOutlineFile" type="file" accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
-      <p class="form-help">Nhận .docx và .pdf. Tệp .doc cũ cần được lưu lại thành .docx trước khi tải.</p>
+      <p class="form-help">Nhận .docx và .pdf. Với Word, ảnh đi kèm từng câu được giữ lại trong quiz; ảnh EMF/WMF được chuyển sang PNG chỉ để trình duyệt hiển thị, đồng thời vẫn lưu bản gốc. Tệp .doc cũ cần được lưu lại thành .docx trước khi tải.</p>
 
       <div id="biologyScanSummary" class="scan-summary" hidden></div>
       <label for="biologyLessonSelect">Tạo quiz cho bài</label>
@@ -514,6 +516,16 @@ function markedParagraph(paragraph) {
   }).join("").replace(/\s+/g, " ").trim();
 }
 
+function paragraphImageIds(paragraph) {
+  const relationshipNamespace =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  return Array.from(paragraph.getElementsByTagName("*"))
+    .filter(node => ["blip", "imagedata"].includes(node.localName))
+    .map(node => node.getAttributeNS(relationshipNamespace, "embed") ||
+      node.getAttributeNS(relationshipNamespace, "id"))
+    .filter(Boolean);
+}
+
 function withoutMarks(text) {
   return text.replace(/\[\[\/?U\]\]/g, "").replace(/\s+/g, " ").trim();
 }
@@ -543,12 +555,15 @@ function parseBiologyBlocks(paragraphs) {
       : parseBiologyTrueFalse(block.lines);
     if (question) {
       question.lesson = lesson;
+      question.imageIds = [...new Set(block.imageIds || [])];
       if (!lessons.has(lesson)) lessons.set(lesson, []);
       lessons.get(lesson).push(question);
     }
   };
 
-  paragraphs.forEach(marked => {
+  paragraphs.forEach(paragraph => {
+    const marked = typeof paragraph === "string" ? paragraph : paragraph.marked;
+    const imageIds = typeof paragraph === "string" ? [] : paragraph.imageIds;
     const clean = withoutMarks(marked);
     const headingType = questionTypeFromHeading(marked);
     if (headingType) {
@@ -568,13 +583,14 @@ function parseBiologyBlocks(paragraphs) {
 
     if (/^Câu\s*\d+/i.test(clean)) {
       finish();
-      block = { marked, lines: [marked] };
+      block = { marked, lines: [marked], imageIds: [...imageIds] };
       return;
     }
 
     if (block) {
       block.marked += "\n" + marked;
       block.lines.push(marked);
+      block.imageIds.push(...imageIds);
     }
   });
 
@@ -667,8 +683,88 @@ async function parseBiologyDocx(file) {
   const namespace =
     "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
   const paragraphs = Array.from(xml.getElementsByTagNameNS(namespace, "p"))
-    .map(markedParagraph).filter(Boolean);
-  return parseBiologyBlocks(paragraphs);
+    .map(paragraph => ({
+      marked: markedParagraph(paragraph),
+      imageIds: paragraphImageIds(paragraph)
+    }))
+    .filter(paragraph => paragraph.marked || paragraph.imageIds.length);
+  const lessons = parseBiologyBlocks(paragraphs);
+  await attachDocxImages(zip, lessons);
+  return lessons;
+}
+
+function imageMimeType(filename) {
+  const ext = filename.split(".").pop().toLowerCase();
+  return {
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+    webp: "image/webp", emf: "image/x-emf", wmf: "image/x-wmf",
+    bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff"
+  }[ext] || "application/octet-stream";
+}
+
+function sanitizeStorageName(name) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+async function loadMetafileRenderer() {
+  if (!metafileRendererPromise) {
+    metafileRendererPromise = import(
+      "https://cdn.jsdelivr.net/npm/emf-renderer@0.1.0/+esm"
+    );
+  }
+  return metafileRendererPromise;
+}
+
+async function makeBiologyImage(sourceBlob, name) {
+  const extension = name.split(".").pop().toLowerCase();
+  const isMetafile = extension === "emf" || extension === "wmf";
+  let displayBlob = sourceBlob;
+  if (isMetafile) {
+    const renderer = await loadMetafileRenderer();
+    const binary = await sourceBlob.arrayBuffer();
+    displayBlob = extension === "emf"
+      ? await renderer.renderEmfToBlob(binary, { trimTransparentBounds: true })
+      : await renderer.renderWmfToBlob(binary, { trimTransparentBounds: true });
+    if (!displayBlob) throw new Error(`Không thể chuyển ảnh ${name} để hiển thị.`);
+  }
+  return {
+    name,
+    originalBlob: sourceBlob,
+    displayBlob,
+    converted: isMetafile,
+    previewUrl: URL.createObjectURL(displayBlob)
+  };
+}
+
+async function attachDocxImages(zip, lessons) {
+  const relsFile = zip.file("word/_rels/document.xml.rels");
+  if (!relsFile) return;
+  const rels = new DOMParser().parseFromString(
+    await relsFile.async("text"), "application/xml"
+  );
+  const targets = new Map(Array.from(rels.getElementsByTagName("Relationship"))
+    .filter(item => /\/image$/.test(item.getAttribute("Type") || ""))
+    .map(item => [item.getAttribute("Id"), item.getAttribute("Target")]));
+  const ids = [...new Set(lessons.flatMap(item => item.questions)
+    .flatMap(question => question.imageIds || []))];
+  const imagesById = new Map();
+  await Promise.all(ids.map(async id => {
+    const target = targets.get(id);
+    if (!target) return;
+    const path = target.startsWith("/")
+      ? target.slice(1) : `word/${target.replace(/^\.\//, "")}`;
+    const source = zip.file(path);
+    if (!source) return;
+    const name = path.split("/").pop();
+    const blob = await source.async("blob");
+    const typedBlob = new Blob([blob], { type: imageMimeType(name) });
+    imagesById.set(id, await makeBiologyImage(typedBlob, name));
+  }));
+  lessons.forEach(item => item.questions.forEach(question => {
+    question.images = (question.imageIds || [])
+      .map(id => imagesById.get(id)).filter(Boolean);
+    delete question.imageIds;
+  }));
 }
 
 async function parseBiologyPdf(file) {
@@ -752,15 +848,43 @@ function selectBiologyLesson(event) {
   }
 }
 
-function biologyQuestionRows(quizId) {
-  return selectedBiologyLesson.questions.map((question, index) => ({
+async function uploadBiologyQuestionImages(quizId, question, questionIndex) {
+  const images = question.images || [];
+  return Promise.all(images.map(async (image, imageIndex) => {
+    const prefix = `${currentUser.id}/${quizId}/${questionIndex + 1}-${imageIndex + 1}`;
+    const originalPath = `${prefix}-${sanitizeStorageName(image.name)}`;
+    const { error: originalError } = await db.storage
+      .from(BIOLOGY_IMAGE_BUCKET)
+      .upload(originalPath, image.originalBlob, {
+        contentType: image.originalBlob.type,
+        upsert: false
+      });
+    if (originalError) throw originalError;
+    const originalUrl = db.storage.from(BIOLOGY_IMAGE_BUCKET)
+      .getPublicUrl(originalPath).data.publicUrl;
+    let url = originalUrl;
+    if (image.converted) {
+      const displayPath = `${prefix}-${sanitizeStorageName(image.name.replace(/\.(emf|wmf)$/i, ".png"))}`;
+      const { error: displayError } = await db.storage
+        .from(BIOLOGY_IMAGE_BUCKET)
+        .upload(displayPath, image.displayBlob, { contentType: "image/png", upsert: false });
+      if (displayError) throw displayError;
+      url = db.storage.from(BIOLOGY_IMAGE_BUCKET).getPublicUrl(displayPath).data.publicUrl;
+    }
+    return { name: image.name, url, original_url: originalUrl, converted: image.converted };
+  }));
+}
+
+async function biologyQuestionRows(quizId) {
+  return Promise.all(selectedBiologyLesson.questions.map(async (question, index) => ({
     quiz_id: quizId,
     question_type: question.type,
     prompt: question.prompt,
     options: question.options,
     correct_answers: question.correct_answers,
+    image_data: await uploadBiologyQuestionImages(quizId, question, index),
     sort_order: index + 1
-  }));
+  })));
 }
 
 function startBiologyPreview() {
@@ -808,8 +932,9 @@ async function saveBiologyQuiz(event) {
       question_types: ["multiple_choice", "true_false"]
     }).select("id").single();
     if (error) throw error;
+    message.textContent = "Đang lưu câu hỏi và hình ảnh...";
     const { error: questionsError } = await db.from("quiz_questions")
-      .insert(biologyQuestionRows(quiz.id));
+      .insert(await biologyQuestionRows(quiz.id));
     if (questionsError) throw questionsError;
     message.textContent = visibility === "public" ? "Đã tạo quiz công khai." : "Đã lưu quiz riêng tư.";
   } catch (error) {
@@ -1193,7 +1318,7 @@ async function startQuiz(quizId) {
     if (quiz.subject === "biology") {
       const { data: rows, error: questionsError } = await db
         .from("quiz_questions")
-        .select("question_type,prompt,options,correct_answers,sort_order")
+        .select("question_type,prompt,options,correct_answers,image_data,sort_order")
         .eq("quiz_id", quizId)
         .order("sort_order");
       if (questionsError) throw questionsError;
@@ -1201,7 +1326,8 @@ async function startQuiz(quizId) {
         type: row.question_type,
         prompt: row.prompt,
         options: row.options,
-        answer: row.correct_answers
+        answer: row.correct_answers,
+        images: row.image_data || []
       }));
     } else {
       const { data: words, error: wordsError } = await db
@@ -1267,6 +1393,8 @@ function renderQuestion() {
   prompt.textContent = question.prompt;
   area.append(heading, guide, prompt);
 
+  renderQuestionImages(question.images, area);
+
   if (question.type === "true_false") {
     renderTrueFalseQuestion(question, area);
     return;
@@ -1282,6 +1410,21 @@ function renderQuestion() {
     );
     button.className = "answer-option";
     area.appendChild(button);
+  });
+}
+
+function renderQuestionImages(images, area) {
+  (images || []).forEach((image, index) => {
+    const src = image.previewUrl || image.url;
+    if (!src) return;
+    const figure = document.createElement("figure");
+    figure.className = "question-image";
+    const element = document.createElement("img");
+    element.src = src;
+    element.alt = `Hình minh họa ${index + 1} của câu hỏi`;
+    element.loading = "lazy";
+    figure.appendChild(element);
+    area.appendChild(figure);
   });
 }
 
