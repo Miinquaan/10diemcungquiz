@@ -679,10 +679,20 @@ function renderBiologyCreateForm() {
 function markedParagraph(paragraph) {
   const namespace =
     "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-  return directChildren(paragraph, "r").map(run => {
+  const runs = directChildren(paragraph, "r");
+  return runs.map((run, index) => {
     const text = Array.from(run.getElementsByTagNameNS(namespace, "t"))
       .map(node => node.textContent).join("");
-    if (!text) return "";
+    if (!text) {
+      const embeddedEquation = Array.from(run.getElementsByTagName("*"))
+        .some(node => node.localName === "OLEObject" && /^Equation\./i.test(node.getAttribute("ProgID") || ""));
+      const before = runs[index - 1]?.textContent || "";
+      const after = runs[index + 1]?.textContent || "";
+      // In the supplied outline Word stores the arrow between 5′ and 3′ as
+      // an embedded equation. Preserve its meaning inline, not as a figure.
+      if (embeddedEquation && /[35][′’']\s*$/.test(before) && /^\s*[35][′’']/.test(after)) return "→";
+      return "";
+    }
     const underlined = Boolean(
       run.querySelector("u") ||
       run.getElementsByTagNameNS(namespace, "u").length
@@ -702,7 +712,19 @@ function paragraphImageIds(paragraph) {
     ...Array.from(paragraph.getElementsByTagNameNS(vmlNamespace, "imagedata")),
     ...Array.from(paragraph.getElementsByTagName("imagedata"))
   ];
+  const runs = directChildren(paragraph, "r");
   return imageNodes
+    .filter(node => {
+      let run = node.parentNode;
+      while (run && run.parentNode !== paragraph) run = run.parentNode;
+      const index = runs.indexOf(run);
+      if (index < 0) return true;
+      const equation = Array.from(run.getElementsByTagName("*"))
+        .some(child => child.localName === "OLEObject" && /^Equation\./i.test(child.getAttribute("ProgID") || ""));
+      const before = runs[index - 1]?.textContent || "";
+      const after = runs[index + 1]?.textContent || "";
+      return !(equation && /[35][′’']\s*$/.test(before) && /^\s*[35][′’']/.test(after));
+    })
     .map(node => node.getAttributeNS(relationshipNamespace, "embed") ||
       node.getAttributeNS(relationshipNamespace, "id") ||
       node.getAttribute("r:embed") || node.getAttribute("r:id"))
