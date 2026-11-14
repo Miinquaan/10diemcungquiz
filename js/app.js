@@ -519,10 +519,18 @@ function markedParagraph(paragraph) {
 function paragraphImageIds(paragraph) {
   const relationshipNamespace =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-  return Array.from(paragraph.getElementsByTagName("*"))
-    .filter(node => ["blip", "imagedata"].includes(node.localName))
+  const drawingNamespace =
+    "http://schemas.openxmlformats.org/drawingml/2006/main";
+  const vmlNamespace = "urn:schemas-microsoft-com:vml";
+  const imageNodes = [
+    ...Array.from(paragraph.getElementsByTagNameNS(drawingNamespace, "blip")),
+    ...Array.from(paragraph.getElementsByTagNameNS(vmlNamespace, "imagedata")),
+    ...Array.from(paragraph.getElementsByTagName("imagedata"))
+  ];
+  return imageNodes
     .map(node => node.getAttributeNS(relationshipNamespace, "embed") ||
-      node.getAttributeNS(relationshipNamespace, "id"))
+      node.getAttributeNS(relationshipNamespace, "id") ||
+      node.getAttribute("r:embed") || node.getAttribute("r:id"))
     .filter(Boolean);
 }
 
@@ -537,9 +545,28 @@ function lessonTitle(text) {
 
 function questionTypeFromHeading(text) {
   const clean = withoutMarks(text).toUpperCase();
-  if (/PHẦN\s*(II|2).*ĐÚNG\s*SAI/.test(clean)) return "true_false";
-  if (/PHẦN\s*(I|1).*TRẮC\s*NGHIỆM/.test(clean)) return "multiple_choice";
+  if (/(?:PHẦN\s*)?(?:II|2)\s*[.):]?\s*TRẮC\s*NGHIỆM\s*ĐÚNG\s*SAI/.test(clean)) {
+    return "true_false";
+  }
+  if (/(?:PHẦN\s*)?(?:I|1)\s*[.):]?\s*TRẮC\s*NGHIỆM(?:\s*NHIỀU)?\s*LỰA\s*CHỌN/.test(clean)) {
+    return "multiple_choice";
+  }
   return "";
+}
+
+function splitInlineQuestions(paragraph) {
+  const marked = typeof paragraph === "string" ? paragraph : paragraph.marked;
+  const imageIds = typeof paragraph === "string" ? [] : paragraph.imageIds;
+  const starts = [...marked.matchAll(/Câu\s*\d+\s*[.:]/gi)]
+    .map(match => match.index).filter(index => index > 0);
+  if (!starts.length) return [paragraph];
+  const boundaries = [0, ...starts, marked.length];
+  return boundaries.slice(0, -1).map((start, index) => ({
+    marked: marked.slice(start, boundaries[index + 1]).trim(),
+    // A Word paragraph has one drawing anchor; when it contains several
+    // questions, that drawing belongs to the first question in the paragraph.
+    imageIds: index === 0 ? imageIds : []
+  }));
 }
 
 function parseBiologyBlocks(paragraphs) {
@@ -561,7 +588,7 @@ function parseBiologyBlocks(paragraphs) {
     }
   };
 
-  paragraphs.forEach(paragraph => {
+  paragraphs.flatMap(splitInlineQuestions).forEach(paragraph => {
     const marked = typeof paragraph === "string" ? paragraph : paragraph.marked;
     const imageIds = typeof paragraph === "string" ? [] : paragraph.imageIds;
     const clean = withoutMarks(marked);
@@ -623,7 +650,7 @@ function markedTextState(marked) {
 function parseBiologyChoice(marked) {
   const state = markedTextState(marked);
   const clean = state.plain;
-  const matches = [...clean.matchAll(/(^|[^A-ZÀ-Ỹ])([A-D])\s*[.)](?=\s)/g)];
+  const matches = [...clean.matchAll(/(^|[^A-ZÀ-Ỹ])([A-D])\s*[.)]/g)];
   if (matches.length < 4) return null;
   const labelOffset = match => match.index + match[1].length;
   const first = labelOffset(matches[0]);
