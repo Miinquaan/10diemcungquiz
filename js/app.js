@@ -2072,7 +2072,11 @@ async function finishQuiz() {
 async function loadAiAdminStats() {
   const summary = document.getElementById("aiAdminSummary");
   const area = document.getElementById("aiAdminList");
+  const historyArea = document.getElementById("aiAdminHistory");
   area.replaceChildren();
+  historyArea.replaceChildren();
+  document.getElementById("aiAdminTotal").textContent = "—";
+  drawAiUsageChart([]);
   if (!currentUser || !isQuizAdmin || !db) {
     summary.textContent = "Chỉ quản trị viên được xem thống kê này.";
     return;
@@ -2085,15 +2089,60 @@ async function loadAiAdminStats() {
   }
   const rows = data || [];
   const total = rows.reduce((sum, row) => sum + Number(row.requests || 0), 0);
-  summary.textContent = `Hôm nay: ${total} lượt đã tính từ ${rows.length} tài khoản. Không có trần chung do web đặt.`;
-  if (!rows.length) { area.textContent = "Chưa có lượt tạo quiz AI hôm nay."; return; }
-  rows.forEach(row => {
+  document.getElementById("aiAdminTotal").textContent = String(total);
+  summary.textContent = `${rows.length} tài khoản đã dùng • Không có trần chung do web đặt.`;
+  drawAiUsageChart(rows);
+  if (!rows.length) area.textContent = "Chưa có lượt tạo quiz AI hôm nay.";
+  rows.forEach((row, index) => {
     const card = document.createElement("article"); card.className = "quiz-card";
     const heading = document.createElement("h3"); heading.textContent = row.display_name || "Chưa có tên";
+    const marker = document.createElement("span"); marker.className = "ai-stats-marker";
+    marker.style.backgroundColor = aiChartColor(index);
+    marker.setAttribute("aria-hidden", "true"); heading.prepend(marker);
     const info = document.createElement("p");
     info.textContent = `Lớp: ${row.class_name || "—"} • Đã dùng: ${row.requests}/5 • Còn: ${Math.max(0, 5 - Number(row.requests || 0))} lượt`;
     card.append(heading, info); area.appendChild(card);
   });
+  historyArea.textContent = "Đang tải lịch sử...";
+  const history = await db.rpc("admin_ai_quiz_history");
+  if (history.error) {
+    historyArea.textContent = "Chưa tải được lịch sử. Hãy kiểm tra migration thống kê AI đã được cài trên Supabase.";
+    return;
+  }
+  historyArea.replaceChildren();
+  if (!history.data?.length) { historyArea.textContent = "Chưa có lượt nào được ghi trong lịch sử."; return; }
+  history.data.forEach(row => {
+    const card = document.createElement("article"); card.className = "quiz-card";
+    const heading = document.createElement("h3"); heading.textContent = row.display_name || "Chưa có tên";
+    const info = document.createElement("p");
+    info.textContent = `Lớp: ${row.class_name || "—"} • ${new Date(row.requested_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`;
+    card.append(heading, info); historyArea.appendChild(card);
+  });
+}
+
+function aiChartColor(index) {
+  return ["#1d4ed8", "#0e7490", "#7c3aed", "#b45309", "#047857", "#be185d", "#475569", "#b91c1c"][index % 8];
+}
+
+function drawAiUsageChart(rows) {
+  const chart = document.getElementById("aiAdminChart");
+  const namespace = "http://www.w3.org/2000/svg";
+  chart.replaceChildren();
+  const track = document.createElementNS(namespace, "circle");
+  [ ["cx", "60"], ["cy", "60"], ["r", "46"], ["fill", "none"], ["stroke", "#e2e8f0"], ["stroke-width", "14"] ].forEach(([key, value]) => track.setAttribute(key, value));
+  chart.appendChild(track);
+  const total = rows.reduce((sum, row) => sum + Number(row.requests || 0), 0);
+  if (!total) { chart.setAttribute("aria-label", "Chưa có lượt tạo quiz AI hôm nay"); return; }
+  const circumference = 2 * Math.PI * 46;
+  let offset = 0;
+  rows.forEach((row, index) => {
+    const length = circumference * Number(row.requests || 0) / total;
+    const circle = document.createElementNS(namespace, "circle");
+    [["cx", "60"], ["cy", "60"], ["r", "46"], ["fill", "none"], ["stroke", aiChartColor(index)], ["stroke-width", "14"], ["stroke-dasharray", `${length} ${circumference - length}`], ["stroke-dashoffset", String(-offset)], ["transform", "rotate(-90 60 60)"]].forEach(([key, value]) => circle.setAttribute(key, value));
+    chart.appendChild(circle);
+    offset += length;
+  });
+  chart.setAttribute("aria-label", `Biểu đồ phân bố ${total} lượt yêu cầu giữa ${rows.length} tài khoản; danh sách chi tiết ở bên dưới.`);
 }
 
 async function loadHistory() {

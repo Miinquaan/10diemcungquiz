@@ -46,10 +46,17 @@
   <main>
     <section id="aiAdmin" class="page" hidden>
       <h2>Thống kê tạo quiz AI</h2>
-      <p id="aiAdminSummary" aria-live="polite">Đang tải...</p>
-      <p>Thống kê theo ngày UTC, làm mới lúc 07:00 giờ Việt Nam. Mỗi tài khoản được tối đa 5 yêu cầu/ngày; lượt gặp lỗi sau khi gửi vẫn có thể được tính.</p>
-      <p>Hạn mức Gemini còn lại không được cung cấp trong trang này; xem hạn mức thực tế và mức sử dụng trong <a href="https://aistudio.google.com/usage" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</p>
+      <p>Thống kê hôm nay theo ngày UTC, làm mới lúc 07:00 giờ Việt Nam.</p>
+      <div class="ai-stats-overview">
+        <div class="ai-stats-chart-wrap"><svg id="aiAdminChart" class="ai-stats-chart" viewBox="0 0 120 120" role="img" aria-label="Phân bố lượt tạo AI hôm nay"></svg><div class="ai-stats-chart-center"><strong id="aiAdminTotal">—</strong><span>lượt đã tính</span></div></div>
+        <div class="ai-stats-summary"><h3>Hạn mức toàn website</h3><p id="aiAdminSummary" aria-live="polite">Đang tải...</p><p id="aiAdminRemaining">Lượt Gemini còn lại: <strong>chưa xác định</strong></p><p>Hạn mức thực tế thay đổi theo project và mô hình. Xem tại <a href="https://aistudio.google.com/usage" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</p></div>
+      </div>
+      <h3>Phân bố theo tài khoản hôm nay</h3>
+      <p>Mỗi tài khoản tối đa 5 yêu cầu/ngày. Lượt gặp lỗi sau khi gửi vẫn có thể được tính.</p>
       <div id="aiAdminList" class="card-list" aria-live="polite"></div>
+      <h3>Lịch sử lượt yêu cầu</h3>
+      <p>Hiển thị tối đa 200 lượt trong 30 ngày gần nhất, bắt đầu ghi từ khi tính năng lịch sử được cài. Một lượt có thể không tạo quiz thành công.</p>
+      <div id="aiAdminHistory" class="card-list" aria-live="polite"></div>
     </section>
     <section id="history" class="page" hidden>
       <h2>Lịch sử làm bài</h2>

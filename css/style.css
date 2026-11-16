@@ -281,6 +281,16 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 .quiz-card p { margin: 6px 0; }
 .quiz-card button { margin-top: 10px; }
 
+.ai-stats-overview { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; padding: 24px; margin: 22px 0; border: 1px solid var(--border); border-radius: 15px; background: #fbfdff; }
+.ai-stats-chart-wrap { position: relative; flex: 0 0 180px; width: 180px; height: 180px; }
+.ai-stats-chart { display: block; width: 100%; height: 100%; }
+.ai-stats-chart-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+.ai-stats-chart-center strong { color: var(--primary-dark); font-size: 2rem; line-height: 1.1; }
+.ai-stats-chart-center span { color: #475569; font-size: .85rem; }
+.ai-stats-summary { flex: 1 1 260px; min-width: 0; }
+.ai-stats-summary h3 { margin-top: 0; }
+.ai-stats-marker { display: inline-block; width: 12px; height: 12px; margin-right: 10px; border-radius: 50%; vertical-align: middle; }
+
 .quiz-form {
   max-width: 780px;
   margin-top: 22px;
