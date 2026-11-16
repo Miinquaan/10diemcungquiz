@@ -23,11 +23,19 @@
       <button id="homeworkNav" type="button" onclick="showPage('homework')" hidden>Bài tập</button>
       <button id="teacherNav" type="button" onclick="showPage('teacher')" hidden>Giáo viên</button>
       <button id="teacherAdminNav" type="button" onclick="showPage('teacherAdmin')" hidden>Cấp quyền giáo viên</button>
+      <button id="aiAdminNav" type="button" onclick="showPage('aiAdmin')" hidden>Thống kê AI</button>
       <button id="loginBtn" type="button" onclick="loginGoogle()">Đăng nhập Google</button>
     </nav>
   </header>
 
   <main>
+    <section id="aiAdmin" class="page" hidden>
+      <h2>Thống kê tạo quiz AI</h2>
+      <p id="aiAdminSummary" aria-live="polite">Đang tải...</p>
+      <p>Thống kê theo ngày UTC, làm mới lúc 07:00 giờ Việt Nam. Mỗi tài khoản được tối đa 5 yêu cầu/ngày; lượt gặp lỗi sau khi gửi vẫn có thể được tính.</p>
+      <p>Hạn mức Gemini còn lại không được cung cấp trong trang này; xem hạn mức thực tế và mức sử dụng trong <a href="https://aistudio.google.com/usage" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</p>
+      <div id="aiAdminList" class="card-list" aria-live="polite"></div>
+    </section>
     <section id="history" class="page" hidden>
       <h2>Lịch sử làm bài</h2>
       <p>Các lượt làm đã lưu trong tài khoản của bạn.</p>

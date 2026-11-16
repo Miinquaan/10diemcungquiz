@@ -100,6 +100,7 @@ function showPage(pageId) {
   if (pageId === "create") renderCreateForm();
   if (pageId === "myQuizzes") loadMyQuizzes();
   if (pageId === "history") loadHistory();
+  if (pageId === "aiAdmin") loadAiAdminStats();
   if (pageId === "teacher") renderTeacher();
   if (pageId === "homework") renderHomework();
 }
@@ -368,6 +369,7 @@ async function checkUser() {
     isQuizAdmin = Boolean(admin.data);
     document.getElementById("teacherNav").hidden = !isTeacher;
     document.getElementById("teacherAdminNav").hidden = !isQuizAdmin;
+    document.getElementById("aiAdminNav").hidden = !isQuizAdmin;
     document.getElementById("homeworkNav").hidden = false;
   }
   updateLoginButton();
@@ -431,7 +433,7 @@ async function loginGoogle() {
     currentProfile = null;
     isTeacher = false;
     isQuizAdmin = false;
-    ["teacherNav", "teacherAdminNav", "homeworkNav"].forEach(id => document.getElementById(id).hidden = true);
+    ["teacherNav", "teacherAdminNav", "aiAdminNav", "homeworkNav"].forEach(id => document.getElementById(id).hidden = true);
     selectedGrade = "";
     creatingQuiz = false;
     updateLoginButton();
@@ -2050,6 +2052,33 @@ async function finishQuiz() {
   } catch (error) {
     leaderboard.textContent = `Chưa lưu được kết quả: ${error.message}`;
   }
+}
+
+async function loadAiAdminStats() {
+  const summary = document.getElementById("aiAdminSummary");
+  const area = document.getElementById("aiAdminList");
+  area.replaceChildren();
+  if (!currentUser || !isQuizAdmin || !db) {
+    summary.textContent = "Chỉ quản trị viên được xem thống kê này.";
+    return;
+  }
+  summary.textContent = "Đang tải thống kê...";
+  const { data, error } = await db.rpc("admin_ai_quiz_usage");
+  if (error) {
+    summary.textContent = `Không tải được thống kê: ${error.message}`;
+    return;
+  }
+  const rows = data || [];
+  const total = rows.reduce((sum, row) => sum + Number(row.requests || 0), 0);
+  summary.textContent = `Hôm nay: ${total} lượt đã tính từ ${rows.length} tài khoản. Không có trần chung do web đặt.`;
+  if (!rows.length) { area.textContent = "Chưa có lượt tạo quiz AI hôm nay."; return; }
+  rows.forEach(row => {
+    const card = document.createElement("article"); card.className = "quiz-card";
+    const heading = document.createElement("h3"); heading.textContent = row.display_name || "Chưa có tên";
+    const info = document.createElement("p");
+    info.textContent = `Lớp: ${row.class_name || "—"} • Đã dùng: ${row.requests}/5 • Còn: ${Math.max(0, 5 - Number(row.requests || 0))} lượt`;
+    card.append(heading, info); area.appendChild(card);
+  });
 }
 
 async function loadHistory() {
