@@ -22,11 +22,26 @@
       <button type="button" onclick="showPage('history')">Lịch sử làm bài</button>
       <button id="homeworkNav" type="button" onclick="showPage('homework')" hidden>Bài tập</button>
       <button id="teacherNav" type="button" onclick="showPage('teacher')" hidden>Giáo viên</button>
-      <button id="teacherAdminNav" type="button" onclick="showPage('teacherAdmin')" hidden>Cấp quyền giáo viên</button>
-      <button id="aiAdminNav" type="button" onclick="showPage('aiAdmin')" hidden>Thống kê AI</button>
+      <button id="adminMenuToggle" type="button" aria-controls="adminSidebar" aria-expanded="false" hidden>☰ Quản trị</button>
       <button id="loginBtn" type="button" onclick="loginGoogle()">Đăng nhập Google</button>
     </nav>
   </header>
+
+  <aside id="adminSidebar" class="admin-sidebar" aria-label="Điều hướng quản trị" hidden>
+    <div class="admin-sidebar-heading">
+      <div class="admin-brand-mark" aria-hidden="true">Q</div>
+      <div><strong>QUIZ HỌC TẬP</strong><span>Trang quản trị</span></div>
+    </div>
+    <p class="admin-nav-group">Tổng quan</p>
+    <button type="button" class="admin-nav-item" data-admin-page="subjects" onclick="creatingQuiz = false; showPage('home')"><span class="admin-nav-icon" aria-hidden="true">⌂</span><span>Trang chủ</span></button>
+    <p class="admin-nav-group">Quản lý</p>
+    <button id="teacherAdminNav" type="button" class="admin-nav-item" data-admin-page="teacherAdmin" onclick="showPage('teacherAdmin')" hidden><span class="admin-nav-icon" aria-hidden="true">♙</span><span>Cấp quyền giáo viên</span></button>
+    <button id="aiAdminNav" type="button" class="admin-nav-item" data-admin-page="aiAdmin" onclick="showPage('aiAdmin')" hidden><span class="admin-nav-icon" aria-hidden="true">▥</span><span>Thống kê AI</span></button>
+    <div id="adminTeacherGroup" hidden>
+      <p class="admin-nav-group">Giáo viên</p>
+      <button type="button" class="admin-nav-item" data-admin-page="teacher" onclick="showPage('teacher')"><span class="admin-nav-icon" aria-hidden="true">▤</span><span>Giao bài tập</span></button>
+    </div>
+  </aside>
 
   <main>
     <section id="aiAdmin" class="page" hidden>

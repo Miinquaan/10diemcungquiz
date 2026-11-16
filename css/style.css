@@ -21,6 +21,43 @@ body {
   background: var(--background);
 }
 
+body.has-admin-sidebar { padding-left: 260px; }
+.admin-sidebar {
+  position: fixed;
+  z-index: 5;
+  inset: 0 auto 0 0;
+  width: 260px;
+  padding: 24px 12px;
+  overflow-y: auto;
+  background: #fff;
+  border-right: 1px solid #e5e7eb;
+}
+.admin-sidebar[hidden], .admin-nav-item[hidden], #adminTeacherGroup[hidden], #adminMenuToggle[hidden] { display: none; }
+.admin-sidebar-heading { display: flex; align-items: center; gap: 12px; padding: 0 6px 20px; border-bottom: 1px solid #e5e7eb; }
+.admin-sidebar-heading strong, .admin-sidebar-heading span { display: block; }
+.admin-sidebar-heading span { color: #64748b; font-size: .88rem; }
+.admin-brand-mark { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 42px; border-radius: 50%; background: #1d4ed8; color: #fff; font-weight: 700; }
+.admin-nav-group { margin: 22px 8px 8px; color: #64748b; font-size: .86rem; font-weight: 700; }
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 10px;
+  color: #1f2937;
+  background: transparent;
+  text-align: left;
+  font-weight: 600;
+}
+.admin-nav-item:hover:not(:disabled), .admin-nav-item.is-active {
+  color: #1e40af;
+  background: #eff6ff;
+  transform: none;
+}
+.admin-nav-item.is-active { box-shadow: inset 3px 0 #1d4ed8; }
+.admin-nav-icon { width: 22px; flex: 0 0 22px; font-size: 1.2rem; text-align: center; }
+#adminMenuToggle { display: none; }
+
 .site-header {
   display: flex;
   align-items: center;
@@ -411,6 +448,10 @@ footer {
 }
 
 @media (max-width: 680px) {
+  body.has-admin-sidebar { padding-left: 0; }
+  .has-admin-sidebar #adminMenuToggle:not([hidden]) { display: inline-block; }
+  .admin-sidebar { display: none; position: static; width: auto; max-height: none; margin: 12px 10px 0; padding: 16px 12px; border: 1px solid #e5e7eb; border-radius: 14px; }
+  .admin-menu-open .admin-sidebar:not([hidden]) { display: block; }
   .site-header { justify-content: center; text-align: center; }
   .brand-home { text-align: center; }
   nav { justify-content: center; }

@@ -91,6 +91,16 @@ function showPage(pageId) {
   document.querySelectorAll(".page").forEach(page => {
     page.hidden = page.id !== pageId;
   });
+  document.querySelectorAll(".admin-nav-item").forEach(button => {
+    const active = button.dataset.adminPage === pageId ||
+      (button.dataset.adminPage === "teacher" && pageId === "teacherResults");
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  document.body.classList.remove("admin-menu-open");
+  const menuToggle = document.getElementById("adminMenuToggle");
+  if (menuToggle) menuToggle.setAttribute("aria-expanded", "false");
 
   if (pageId === "profile") renderProfile();
   if (pageId === "classes") renderClasses();
@@ -367,9 +377,13 @@ async function checkUser() {
     ]);
     isTeacher = Boolean(teacher.data);
     isQuizAdmin = Boolean(admin.data);
-    document.getElementById("teacherNav").hidden = !isTeacher;
+    document.getElementById("teacherNav").hidden = !isTeacher || isQuizAdmin;
     document.getElementById("teacherAdminNav").hidden = !isQuizAdmin;
     document.getElementById("aiAdminNav").hidden = !isQuizAdmin;
+    document.getElementById("adminSidebar").hidden = !isQuizAdmin;
+    document.getElementById("adminMenuToggle").hidden = !isQuizAdmin;
+    document.getElementById("adminTeacherGroup").hidden = !isQuizAdmin || !isTeacher;
+    document.body.classList.toggle("has-admin-sidebar", isQuizAdmin);
     document.getElementById("homeworkNav").hidden = false;
   }
   updateLoginButton();
@@ -433,7 +447,8 @@ async function loginGoogle() {
     currentProfile = null;
     isTeacher = false;
     isQuizAdmin = false;
-    ["teacherNav", "teacherAdminNav", "aiAdminNav", "homeworkNav"].forEach(id => document.getElementById(id).hidden = true);
+    ["teacherNav", "teacherAdminNav", "aiAdminNav", "homeworkNav", "adminSidebar", "adminMenuToggle", "adminTeacherGroup"].forEach(id => document.getElementById(id).hidden = true);
+    document.body.classList.remove("has-admin-sidebar", "admin-menu-open");
     selectedGrade = "";
     creatingQuiz = false;
     updateLoginButton();
@@ -2301,6 +2316,10 @@ async function grantTeacher(event) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  document.getElementById("adminMenuToggle").addEventListener("click", event => {
+    const open = document.body.classList.toggle("admin-menu-open");
+    event.currentTarget.setAttribute("aria-expanded", String(open));
+  });
   if (connectSupabase()) {
     db.auth.onAuthStateChange((_event, session) => {
       currentUser = session?.user || null;
