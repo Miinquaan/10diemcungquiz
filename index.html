@@ -19,6 +19,7 @@
       <button type="button" onclick="creatingQuiz = false; showPage('home')">Trang chủ</button>
       <button type="button" onclick="openCreate()">Tạo quiz</button>
       <button type="button" onclick="showPage('myQuizzes')">Quiz của tôi</button>
+      <button type="button" onclick="showPage('history')">Lịch sử làm bài</button>
       <button id="homeworkNav" type="button" onclick="showPage('homework')" hidden>Bài tập</button>
       <button id="teacherNav" type="button" onclick="showPage('teacher')" hidden>Giáo viên</button>
       <button id="teacherAdminNav" type="button" onclick="showPage('teacherAdmin')" hidden>Cấp quyền giáo viên</button>
@@ -27,6 +28,17 @@
   </header>
 
   <main>
+    <section id="history" class="page" hidden>
+      <h2>Lịch sử làm bài</h2>
+      <p>Các lượt làm đã lưu trong tài khoản của bạn.</p>
+      <div id="historyList" class="card-list" aria-live="polite"></div>
+    </section>
+    <section id="historyReview" class="page" hidden>
+      <button type="button" class="back-link" onclick="showPage('history')">← Lịch sử làm bài</button>
+      <h2>Xem lại bài làm</h2>
+      <p id="historyReviewSummary"></p>
+      <div id="historyReviewList" class="card-list" aria-live="polite"></div>
+    </section>
     <section id="homework" class="page" hidden>
       <h2>Bài tập của lớp</h2><div id="homeworkList" class="card-list"></div>
     </section>
@@ -124,6 +136,7 @@
     <section id="results" class="page" hidden>
       <h2>Kết quả bài làm</h2>
       <div id="resultContent"></div>
+      <button id="reviewCurrentBtn" type="button" hidden>Xem lại bài vừa làm</button>
       <div id="leaderboardWrap">
         <h3>Bảng xếp hạng</h3>
         <div id="leaderboard"></div>

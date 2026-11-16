@@ -70,8 +70,11 @@ let scannedBiologyLessons = [];
 let selectedBiologyLesson = null;
 let activeQuiz = null;
 let activeQuestions = [];
+let questionResponses = [];
+let latestReview = [];
 let questionIndex = 0;
 let correctAnswers = 0;
+let skippedQuestions = 0;
 let startedAt = 0;
 let timerInterval = null;
 let answeredCurrent = false;
@@ -96,6 +99,7 @@ function showPage(pageId) {
   if (pageId === "library") loadQuizzes();
   if (pageId === "create") renderCreateForm();
   if (pageId === "myQuizzes") loadMyQuizzes();
+  if (pageId === "history") loadHistory();
   if (pageId === "teacher") renderTeacher();
   if (pageId === "homework") renderHomework();
 }
@@ -297,10 +301,6 @@ async function renderSections() {
         selectedSectionId = section.id;
         selectedSectionTitle = section.title;
         if (creatingQuiz) {
-          if (!["english", "biology"].includes(selectedSubject)) {
-            alert("Môn này chưa có mẫu đề cương để tạo quiz.");
-            return;
-          }
           showPage("create");
         } else showPage("library");
       });
@@ -565,6 +565,10 @@ function renderCreateForm() {
     renderBiologyCreateForm();
     return;
   }
+  if (selectedSubject !== "english") {
+    renderTheoryCreateForm();
+    return;
+  }
 
   const area = document.getElementById("createQuizForm");
 
@@ -621,6 +625,145 @@ function renderCreateForm() {
     .addEventListener("click", startPreviewQuiz);
 }
 
+let generatedTheoryQuestions = [];
+
+function renderTheoryCreateForm() {
+  const area = document.getElementById("createQuizForm");
+  document.getElementById("createContext").textContent = `Lớp ${selectedGrade} • ${subjectName()} • ${selectedSectionTitle}`;
+  area.innerHTML = `
+    <form id="theoryForm" class="quiz-form">
+      <label for="theoryTitle">Tên quiz</label><input id="theoryTitle" maxlength="150" required>
+      <label for="theoryFile">Đề cương lý thuyết (.docx hoặc PDF có chữ)</label>
+      <input id="theoryFile" type="file" accept=".docx,.pdf" required>
+      <p class="form-help">Nội dung chữ sẽ được gửi tới Gemini để tạo câu hỏi. Không tải tài liệu chứa thông tin cá nhân; ảnh và PDF scan chưa được đọc.</p>
+      <label for="theoryCount">Số câu hỏi</label><input id="theoryCount" type="number" min="1" max="20" value="10" required>
+      <label><input id="theoryConsent" type="checkbox" required> Tôi đồng ý gửi nội dung đề cương tới Gemini.</label>
+      <button type="button" id="theoryGenerate">Tạo câu hỏi</button>
+      <p id="theoryMessage" aria-live="polite"></p>
+      <div id="theoryQuestions"></div>
+      <label for="theoryVisibility">Chia sẻ</label><select id="theoryVisibility"><option value="private">Riêng tư</option><option value="class">Quiz của lớp</option><option value="shared">Quiz chung</option></select>
+      <button id="theorySave" type="submit" disabled>Lưu quiz</button>
+    </form>`;
+  generatedTheoryQuestions = [];
+  document.getElementById("theoryGenerate").addEventListener("click", generateTheoryQuiz);
+  document.getElementById("theoryForm").addEventListener("submit", saveTheoryQuiz);
+  document.getElementById("theoryFile").addEventListener("change", () => {
+    generatedTheoryQuestions = [];
+    document.getElementById("theoryQuestions").replaceChildren();
+    document.getElementById("theorySave").disabled = true;
+    document.getElementById("theoryMessage").textContent = "";
+  });
+}
+
+async function readTheoryText(file) {
+  if (!file || file.size > 10 * 1024 * 1024) throw new Error("Chọn tệp .docx hoặc .pdf không quá 10 MB.");
+  if (/\.docx$/i.test(file.name)) {
+    if (!window.JSZip) throw new Error("Không tải được bộ đọc Word.");
+    const zip = await window.JSZip.loadAsync(await file.arrayBuffer());
+    const source = zip.file("word/document.xml");
+    if (!source) throw new Error("Tệp Word không hợp lệ.");
+    const xml = new DOMParser().parseFromString(await source.async("text"), "application/xml");
+    if (xml.querySelector("parsererror")) throw new Error("Không đọc được tệp Word.");
+    const ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    return Array.from(xml.getElementsByTagNameNS(ns, "p")).map(cellText).filter(Boolean).join("\n");
+  }
+  if (/\.pdf$/i.test(file.name)) {
+    if (!window.pdfjsLib) throw new Error("Không tải được bộ đọc PDF.");
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pages = [];
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const page = await pdf.getPage(n);
+      const content = await page.getTextContent();
+      pages.push(content.items.map(item => item.str || "").join(" "));
+    }
+    return pages.join("\n");
+  }
+  throw new Error("Hãy chọn tệp .docx hoặc .pdf; tệp .doc cần lưu lại thành .docx.");
+}
+
+async function generateTheoryQuiz() {
+  const message = document.getElementById("theoryMessage");
+  const button = document.getElementById("theoryGenerate");
+  const save = document.getElementById("theorySave");
+  const file = document.getElementById("theoryFile").files?.[0];
+  const count = Number(document.getElementById("theoryCount").value);
+  if (!currentUser || !db) { message.textContent = "Hãy đăng nhập trước khi tạo câu hỏi."; return; }
+  if (!document.getElementById("theoryConsent").checked) { message.textContent = "Hãy xác nhận đồng ý gửi nội dung tới Gemini."; return; }
+  if (!Number.isInteger(count) || count < 1 || count > 20) { message.textContent = "Chọn từ 1 đến 20 câu."; return; }
+  button.disabled = true; save.disabled = true; generatedTheoryQuestions = [];
+  document.getElementById("theoryQuestions").replaceChildren();
+  try {
+    message.textContent = "Đang đọc đề cương...";
+    const text = (await readTheoryText(file)).trim();
+    if (text.length < 100) throw new Error("Không đủ chữ để tạo quiz. PDF ảnh cần chuyển sang PDF có chữ trước.");
+    if (text.length > 40000) throw new Error("Đề cương quá dài. Hãy chia thành phần ngắn hơn (tối đa 40.000 ký tự).");
+    message.textContent = "Đang tạo câu hỏi, vui lòng chờ...";
+    const { data, error } = await db.functions.invoke("generate-theory-quiz", { body: { text, count, subject: subjectName(), section: selectedSectionTitle } });
+    if (error) {
+      let detail = "Không thể kết nối dịch vụ AI. Kiểm tra cấu hình hoặc hạn mức rồi thử lại.";
+      try { const body = await error.context?.json(); if (body?.error) detail = body.error; } catch { /* network error */ }
+      throw new Error(detail);
+    }
+    if (!Array.isArray(data?.questions) || !data.questions.length) throw new Error(data?.error || "AI chưa tạo được câu hỏi hợp lệ.");
+    generatedTheoryQuestions = data.questions.filter(q => typeof q.prompt === "string" && Array.isArray(q.options) && q.options.length === 4 && q.options.every(o => typeof o === "string") && ["A", "B", "C", "D"].includes(q.answer));
+    if (!generatedTheoryQuestions.length) throw new Error("AI trả về câu hỏi không hợp lệ. Hãy thử lại.");
+    renderTheoryQuestions();
+    save.disabled = false;
+    message.textContent = `Đã tạo ${generatedTheoryQuestions.length} câu. Hãy kiểm tra và chỉnh sửa trước khi lưu.`;
+  } catch (error) { message.textContent = error.message; }
+  finally { button.disabled = false; }
+}
+
+function renderTheoryQuestions() {
+  const area = document.getElementById("theoryQuestions");
+  area.replaceChildren();
+  generatedTheoryQuestions.forEach((question, index) => {
+    const card = document.createElement("fieldset");
+    const legend = document.createElement("legend"); legend.textContent = `Câu ${index + 1}`; card.appendChild(legend);
+    const prompt = document.createElement("textarea"); prompt.value = question.prompt; prompt.required = true;
+    prompt.setAttribute("aria-label", `Nội dung câu ${index + 1}`);
+    prompt.addEventListener("input", () => { question.prompt = prompt.value; }); card.appendChild(prompt);
+    question.options.forEach((option, i) => {
+      const label = document.createElement("label"); label.textContent = `${"ABCD"[i]}. `;
+      const input = document.createElement("input"); input.value = option; input.required = true;
+      input.addEventListener("input", () => { question.options[i] = input.value; }); label.appendChild(input); card.appendChild(label);
+    });
+    const label = document.createElement("label"); label.textContent = "Đáp án đúng";
+    const select = document.createElement("select");
+    ["A", "B", "C", "D"].forEach(value => select.add(new Option(value, value)));
+    select.value = question.answer;
+    select.addEventListener("change", () => { question.answer = select.value; });
+    label.appendChild(select); card.appendChild(label); area.appendChild(card);
+  });
+}
+
+async function saveTheoryQuiz(event) {
+  event.preventDefault();
+  const message = document.getElementById("theoryMessage");
+  const button = document.getElementById("theorySave");
+  if (!currentUser || !generatedTheoryQuestions.length) { message.textContent = "Hãy đăng nhập và tạo câu hỏi trước."; return; }
+  if (generatedTheoryQuestions.some(q => !q.prompt.trim() || q.options.length !== 4 || q.options.some(o => !o.trim()) || !["A","B","C","D"].includes(q.answer))) {
+    message.textContent = "Hãy điền đủ câu hỏi, bốn đáp án và đáp án đúng."; return;
+  }
+  if (generatedTheoryQuestions.some(q => new Set(q.options.map(o => o.trim().toLocaleLowerCase("vi"))).size !== 4)) {
+    message.textContent = "Mỗi câu phải có bốn lựa chọn khác nhau."; return;
+  }
+  const scope = document.getElementById("theoryVisibility").value;
+  const visibility = scope === "private" ? "private" : "public";
+  button.disabled = true;
+  try {
+    const { data: quiz, error } = await db.from("quizzes").insert({ owner_id: currentUser.id, title: document.getElementById("theoryTitle").value.trim(), description: selectedSectionTitle, subject: selectedSubject, class_code: selectedGrade, section_id: selectedSectionId, visibility, share_scope: scope === "shared" ? "shared" : "class", status: visibility === "private" ? "private" : "published", question_count: generatedTheoryQuestions.length, question_types: ["multiple_choice"] }).select("id").single();
+    if (error) throw error;
+    const rows = generatedTheoryQuestions.map((q, i) => ({ quiz_id: quiz.id, question_type: "multiple_choice", prompt: q.prompt.trim(), options: q.options.map((o, n) => ({ key: "ABCD"[n], text: o.trim() })), correct_answers: [q.answer], sort_order: i + 1 }));
+    const { error: questionError } = await db.from("quiz_questions").insert(rows);
+    if (questionError) throw new Error(`Đã tạo quiz nhưng chưa lưu được câu hỏi: ${questionError.message}. Hãy kiểm tra Quiz của tôi.`);
+    message.textContent = "Đã lưu quiz.";
+    generatedTheoryQuestions = [];
+  } catch (error) { message.textContent = `Không thể lưu quiz: ${error.message}`; }
+  finally { button.disabled = !generatedTheoryQuestions.length; }
+}
+
 function normalizeHeader(value) {
   return value.normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -636,6 +779,7 @@ function renderBiologyCreateForm() {
 
   area.innerHTML = `
     <form id="biologyQuizForm" class="quiz-form">
+      <button type="button" id="openTheoryGenerator">Tạo câu hỏi từ lý thuyết bằng AI</button>
       <label for="biologyQuizTitle">Tên quiz</label>
       <input id="biologyQuizTitle" maxlength="150" required
         placeholder="Ví dụ: Bài 4 - Sinh học 10">
@@ -670,6 +814,7 @@ function renderBiologyCreateForm() {
   selectedBiologyLesson = null;
   document.getElementById("biologyOutlineFile")
     .addEventListener("change", readBiologyOutlineFile);
+  document.getElementById("openTheoryGenerator").addEventListener("click", renderTheoryCreateForm);
   document.getElementById("biologyLessonSelect")
     .addEventListener("change", selectBiologyLesson);
   document.getElementById("biologyQuizForm")
@@ -1246,14 +1391,27 @@ async function parseVocabularyDocx(file) {
       header.includes("vi du")
     );
 
-    const words = rows.slice(1).map(cells => ({
-      english: (cells[keywordIndex] || "").trim(),
-      vietnamese: (cells[definitionIndex] || "").trim(),
-      ipa: ipaIndex >= 0 ? (cells[ipaIndex] || "").trim() : "",
-      example: exampleIndex >= 0 ? (cells[exampleIndex] || "").trim() : ""
-    })).filter(word => word.english && word.vietnamese);
+    const issues = [];
+    const words = [];
+    rows.slice(1).forEach((cells, index) => {
+      const word = {
+        english: (cells[keywordIndex] || "").trim(),
+        vietnamese: (cells[definitionIndex] || "").trim(),
+        ipa: ipaIndex >= 0 ? (cells[ipaIndex] || "").trim() : "",
+        example: exampleIndex >= 0 ? (cells[exampleIndex] || "").trim() : ""
+      };
+      const rowNumber = index + 2;
+      if (!cells.some(cell => cell.trim())) {
+        issues.push(`Dòng ${rowNumber}: trống, đã bỏ qua.`);
+      } else if (!word.english || !word.vietnamese) {
+        issues.push(`Dòng ${rowNumber}: thiếu ${!word.english && !word.vietnamese ? "từ tiếng Anh và nghĩa tiếng Việt" : !word.english ? "từ tiếng Anh" : "nghĩa tiếng Việt"}, đã bỏ qua.`);
+      } else {
+        if (!word.example) issues.push(`Dòng ${rowNumber}: thiếu ví dụ, không dùng được cho dạng vận dụng.`);
+        words.push(word);
+      }
+    });
 
-    if (words.length) return { title, words };
+    return { title, words, issues };
   }
 
   throw new Error(
@@ -1288,7 +1446,7 @@ async function readOutlineFile(event) {
     const parsed = await parseVocabularyDocx(file);
 
     if (parsed.words.length < 4) {
-      throw new Error("Cần ít nhất 4 từ vựng để tạo câu hỏi trắc nghiệm.");
+      throw new Error(`Cần ít nhất 4 từ vựng để tạo câu hỏi trắc nghiệm. ${parsed.issues.join(" ")}`);
     }
 
     scannedVocabulary = parsed.words;
@@ -1305,9 +1463,25 @@ async function readOutlineFile(event) {
     document.getElementById("countHint").textContent =
       `Bạn có thể chọn từ 4 đến ${parsed.words.length} câu hỏi.`;
 
-    summary.innerHTML =
-      `<strong>Đã quét ${parsed.words.length} từ vựng.</strong><br>` +
-      `Ví dụ: ${escapeHtml(parsed.words[0].english)} — ${escapeHtml(parsed.words[0].vietnamese)}`;
+    summary.replaceChildren();
+    const scanCount = document.createElement("strong");
+    scanCount.textContent = `Đã quét ${parsed.words.length} từ vựng.`;
+    const sample = document.createElement("p");
+    sample.textContent = `Ví dụ: ${parsed.words[0].english} — ${parsed.words[0].vietnamese}`;
+    summary.append(scanCount, sample);
+    if (parsed.issues.length) {
+      const details = document.createElement("details");
+      const heading = document.createElement("summary");
+      heading.textContent = `${parsed.issues.length} dòng cần lưu ý`;
+      const list = document.createElement("ul");
+      parsed.issues.forEach(issue => {
+        const item = document.createElement("li");
+        item.textContent = issue;
+        list.appendChild(item);
+      });
+      details.append(heading, list);
+      summary.appendChild(details);
+    }
 
     summary.hidden = false;
     preview.disabled = false;
@@ -1555,7 +1729,7 @@ async function startQuiz(quizId, assignment = null) {
     previewMode = false;
     activeQuiz = quiz;
 
-    if (quiz.subject === "biology") {
+    if (quiz.subject !== "english") {
       const { data: rows, error: questionsError } = await db
         .from("quiz_questions")
         .select("question_type,prompt,options,correct_answers,image_data,sort_order")
@@ -1626,6 +1800,8 @@ function beginQuiz() {
   showPage("play");
   questionIndex = 0;
   correctAnswers = 0;
+  skippedQuestions = 0;
+  questionResponses = activeQuestions.map(() => null);
   startedAt = Date.now();
 
   document.getElementById("quizTitle").textContent = activeQuiz.title;
@@ -1648,7 +1824,9 @@ function renderQuestion() {
 
   area.replaceChildren();
   feedback.textContent = "";
-  next.hidden = true;
+  next.hidden = false;
+  next.textContent = questionIndex === activeQuestions.length - 1
+    ? "Nộp bài" : "Bỏ qua câu này";
   answeredCurrent = false;
 
   const heading = document.createElement("h3");
@@ -1719,6 +1897,7 @@ function renderTrueFalseQuestion(question, area) {
       const button = makeButton(value === "true" ? "Đúng" : "Sai", () => {
         if (answeredCurrent) return;
         selections[assertion.key] = value;
+        questionResponses[questionIndex] = { ...selections };
         controls.querySelectorAll("button").forEach(item => {
           item.classList.toggle("selected-answer", item === button);
         });
@@ -1778,6 +1957,8 @@ function answerQuestion(option, button) {
     ? question.options.find(item => `${item.key}. ${item.text}` === option)?.key === question.answer[0]
     : option === question.answer;
 
+  questionResponses[questionIndex] = option;
+
   if (correct) correctAnswers++;
 
   document.getElementById("answerFeedback").textContent = correct
@@ -1803,7 +1984,9 @@ function answerQuestion(option, button) {
 }
 
 async function nextQuestion() {
-  if (!answeredCurrent) return;
+  if (questionIndex === activeQuestions.length - 1 &&
+      !confirm(`Bạn muốn nộp bài? Có ${skippedQuestions + (answeredCurrent ? 0 : 1)} câu đã bỏ qua.`)) return;
+  if (!answeredCurrent) skippedQuestions++;
 
   if (questionIndex < activeQuestions.length - 1) {
     questionIndex++;
@@ -1824,7 +2007,14 @@ async function finishQuiz() {
   showPage("results");
 
   document.getElementById("resultContent").textContent =
-    `${activeQuiz.title}: ${correctAnswers}/${activeQuestions.length} câu đúng. Thời gian: ${formatDuration(seconds)}.`;
+    `${activeQuiz.title}: ${correctAnswers}/${activeQuestions.length} câu đúng, ${skippedQuestions} câu bỏ qua. Thời gian: ${formatDuration(seconds)}.`;
+  latestReview = activeQuestions.map((question, index) => ({
+    type: question.type, prompt: question.prompt, options: question.options,
+    answer: question.answer, response: questionResponses[index],
+    images: (question.images || []).filter(image => image.url || image.previewUrl)
+      .map(image => ({ url: image.url || image.previewUrl }))
+  }));
+  document.getElementById("reviewCurrentBtn").hidden = false;
 
   const leaderboard = document.getElementById("leaderboard");
   const wrap = document.getElementById("leaderboardWrap");
@@ -1847,6 +2037,7 @@ async function finishQuiz() {
       user_id: currentUser.id,
       assignment_id: activeAssignment?.id || null,
       student_number: activeAssignment?.studentNumber || null,
+      review_data: latestReview,
       score: correctAnswers,
       correct_count: correctAnswers,
       wrong_count: activeQuestions.length - correctAnswers,
@@ -1859,6 +2050,79 @@ async function finishQuiz() {
   } catch (error) {
     leaderboard.textContent = `Chưa lưu được kết quả: ${error.message}`;
   }
+}
+
+async function loadHistory() {
+  const area = document.getElementById("historyList");
+  if (!currentUser || !db) { area.textContent = "Hãy đăng nhập để xem lịch sử."; return; }
+  area.textContent = "Đang tải lịch sử...";
+  const { data, error } = await db.from("quiz_attempts")
+    .select("id,quiz_id,correct_count,total_questions,duration_seconds,created_at,quizzes(title)")
+    .eq("user_id", currentUser.id).order("created_at", { ascending: false }).limit(100);
+  if (error) { area.textContent = `Không tải được lịch sử: ${error.message}`; return; }
+  area.replaceChildren();
+  if (!data?.length) { area.textContent = "Bạn chưa có lượt làm nào được lưu."; return; }
+  data.forEach(attempt => {
+    const card = document.createElement("article"); card.className = "quiz-card";
+    const heading = document.createElement("h3");
+    heading.textContent = attempt.quizzes?.title || "Quiz không còn khả dụng";
+    const info = document.createElement("p");
+    info.textContent = `${attempt.correct_count}/${attempt.total_questions} câu đúng • ${formatDuration(attempt.duration_seconds)} • ${new Date(attempt.created_at).toLocaleString("vi-VN")}`;
+    card.append(heading, info, makeButton("Xem lại", () => openHistoryReview(attempt.id)));
+    area.appendChild(card);
+  });
+}
+
+async function openHistoryReview(attemptId) {
+  if (!currentUser) { showPage("home"); return; }
+  showPage("historyReview");
+  const area = document.getElementById("historyReviewList");
+  area.textContent = "Đang tải bài làm...";
+  const { data, error } = await db.from("quiz_attempts")
+    .select("review_data,correct_count,total_questions,created_at")
+    .eq("id", attemptId).eq("user_id", currentUser.id).single();
+  if (error) { area.textContent = `Không tải được bài làm: ${error.message}`; return; }
+  document.getElementById("historyReviewSummary").textContent =
+    `${data.correct_count}/${data.total_questions} câu đúng • ${new Date(data.created_at).toLocaleString("vi-VN")}`;
+  renderReview(data.review_data);
+}
+
+function renderReview(review) {
+  const area = document.getElementById("historyReviewList");
+  area.replaceChildren();
+  if (!Array.isArray(review) || !review.length) {
+    area.textContent = "Lượt làm này được lưu trước khi có chức năng xem lại nên không có đáp án chi tiết.";
+    return;
+  }
+  review.forEach((item, index) => {
+    const card = document.createElement("article"); card.className = "quiz-card";
+    const heading = document.createElement("h3"); heading.textContent = `Câu ${index + 1}: ${item.prompt}`;
+    card.appendChild(heading);
+    renderQuestionImages(item.images, card);
+    if (item.type === "true_false") {
+      (item.options || []).forEach((assertion, i) => {
+        const text = document.createElement("p");
+        const selected = item.response?.[assertion.key];
+        const correct = item.answer?.[i];
+        text.textContent = `${assertion.key}. ${assertion.text} — ${selected == null ? "Bỏ trống" : selected === correct ? "Chính xác" : "Chưa đúng"}; bạn chọn: ${selected == null ? "—" : selected === "true" ? "Đúng" : "Sai"}; đáp án: ${correct === "true" ? "Đúng" : "Sai"}`;
+        card.appendChild(text);
+      });
+    } else {
+      const selected = document.createElement("p");
+      const chosenKey = Array.isArray(item.answer)
+        ? (item.options || []).find(option => `${option.key}. ${option.text}` === item.response)?.key : null;
+      const isCorrect = item.response != null && (Array.isArray(item.answer)
+        ? chosenKey === item.answer[0] : item.response === item.answer);
+      selected.textContent = `${item.response == null ? "Bỏ trống" : isCorrect ? "Chính xác" : "Chưa đúng"} • Bạn chọn: ${item.response ?? "—"}`;
+      const answer = document.createElement("p");
+      const correct = Array.isArray(item.answer)
+        ? item.options.filter(option => item.answer.includes(option.key)).map(option => `${option.key}. ${option.text}`).join(", ")
+        : item.answer;
+      answer.textContent = `Đáp án đúng: ${correct || "Không có dữ liệu"}`;
+      card.append(selected, answer);
+    }
+    area.appendChild(card);
+  });
 }
 
 async function loadMyQuizzes() {
@@ -2017,6 +2281,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   document.getElementById("nextBtn").addEventListener("click", nextQuestion);
+  document.getElementById("reviewCurrentBtn").addEventListener("click", () => {
+    showPage("historyReview");
+    document.getElementById("historyReviewSummary").textContent = `${correctAnswers}/${activeQuestions.length} câu đúng`;
+    renderReview(latestReview);
+  });
   document.getElementById("profileForm").addEventListener("submit", saveProfile);
   document.getElementById("assignmentForm").addEventListener("submit", submitAssignment);
   document.getElementById("teacherGrantForm").addEventListener("submit", grantTeacher);
