@@ -602,7 +602,7 @@ function renderCreateForm() {
       <input id="outlineFile" type="file"
         accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         required>
-      <p class="form-help">Mẫu Tiếng Anh cần bảng có các cột: Keyword / Collocation, Định nghĩa tiếng Việt, IPA, Ví dụ nguyên văn trong bài.</p>
+      <p class="form-help">Nhận bảng có cột Từ vựng và Nghĩa tiếng Việt, hoặc Keyword / Collocation và Định nghĩa tiếng Việt. Loại từ và IPA là tùy chọn; dạng vận dụng cần thêm cột ví dụ.</p>
       <div id="scanSummary" class="scan-summary" hidden></div>
 
       <fieldset>
@@ -784,6 +784,7 @@ async function saveTheoryQuiz(event) {
 function normalizeHeader(value) {
   return value.normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
@@ -1392,7 +1393,8 @@ async function parseVocabularyDocx(file) {
 
     const headers = rows[0].map(normalizeHeader);
     const keywordIndex = headers.findIndex(header =>
-      header.includes("keyword") || header.includes("collocation")
+      header.includes("keyword") || header.includes("collocation") ||
+      header === "tu vung" || header.startsWith("tu vung ")
     );
     const definitionIndex = headers.findIndex(header =>
       header.includes("dinh nghia") ||
@@ -1402,7 +1404,8 @@ async function parseVocabularyDocx(file) {
     if (keywordIndex < 0 || definitionIndex < 0) continue;
 
     const ipaIndex = headers.findIndex(header =>
-      header === "ipa" || header.includes("phien am")
+      header === "ipa" || header.includes("phien am") ||
+      header.includes("phat am") || /\bipa\b/.test(header)
     );
     const exampleIndex = headers.findIndex(header =>
       header.includes("vi du")
@@ -1432,7 +1435,7 @@ async function parseVocabularyDocx(file) {
   }
 
   throw new Error(
-    "Không tìm thấy bảng từ vựng đúng mẫu. Tệp cần có cột Keyword / Collocation và Định nghĩa tiếng Việt."
+    "Không tìm thấy bảng từ vựng đúng mẫu. Tệp cần có cột Từ vựng hoặc Keyword / Collocation và cột Nghĩa tiếng Việt."
   );
 }
 
