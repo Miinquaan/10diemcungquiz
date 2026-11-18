@@ -603,6 +603,10 @@ function renderCreateForm() {
         accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         required>
       <p class="form-help">Nhận bảng có cột Từ vựng và Nghĩa tiếng Việt, hoặc Keyword / Collocation và Định nghĩa tiếng Việt. Loại từ và IPA là tùy chọn; dạng vận dụng cần thêm cột ví dụ.</p>
+      <div id="vocabularyTestChoice" hidden>
+        <label for="vocabularyTest">Ch?n Test</label>
+        <select id="vocabularyTest"></select>
+      </div>
       <div id="scanSummary" class="scan-summary" hidden></div>
 
       <fieldset>
@@ -1383,60 +1387,92 @@ async function parseVocabularyDocx(file) {
     .map(paragraph => cellText(paragraph))
     .find(text => text) || file.name.replace(/\.docx$/i, "");
 
-  const tables = Array.from(xml.getElementsByTagNameNS(namespace, "tbl"));
+  const body = xml.getElementsByTagNameNS(namespace, "body")[0];
+  const groups = [];
+  let currentTest = "";
+  let currentUnit = "";
+  let columns = null;
+  let tableNumber = 0;
+  let recognized = false;
 
-  for (const table of tables) {
-    const rows = directChildren(table, "tr")
-      .map(row => directChildren(row, "tc").map(cellText));
-
-    if (rows.length < 2) continue;
-
-    const headers = rows[0].map(normalizeHeader);
-    const keywordIndex = headers.findIndex(header =>
-      header.includes("keyword") || header.includes("collocation") ||
-      header === "tu vung" || header.startsWith("tu vung ")
-    );
-    const definitionIndex = headers.findIndex(header =>
-      header.includes("dinh nghia") ||
-      header.includes("nghia tieng viet")
-    );
-
-    if (keywordIndex < 0 || definitionIndex < 0) continue;
-
-    const ipaIndex = headers.findIndex(header =>
-      header === "ipa" || header.includes("phien am") ||
-      header.includes("phat am") || /\bipa\b/.test(header)
-    );
-    const exampleIndex = headers.findIndex(header =>
-      header.includes("vi du")
-    );
-
-    const issues = [];
-    const words = [];
-    rows.slice(1).forEach((cells, index) => {
-      const word = {
-        english: (cells[keywordIndex] || "").trim(),
-        vietnamese: (cells[definitionIndex] || "").trim(),
-        ipa: ipaIndex >= 0 ? (cells[ipaIndex] || "").trim() : "",
-        example: exampleIndex >= 0 ? (cells[exampleIndex] || "").trim() : ""
-      };
-      const rowNumber = index + 2;
-      if (!cells.some(cell => cell.trim())) {
-        issues.push(`Dòng ${rowNumber}: trống, đã bỏ qua.`);
-      } else if (!word.english || !word.vietnamese) {
-        issues.push(`Dòng ${rowNumber}: thiếu ${!word.english && !word.vietnamese ? "từ tiếng Anh và nghĩa tiếng Việt" : !word.english ? "từ tiếng Anh" : "nghĩa tiếng Việt"}, đã bỏ qua.`);
-      } else {
-        if (!word.example) issues.push(`Dòng ${rowNumber}: thiếu ví dụ, không dùng được cho dạng vận dụng.`);
-        words.push(word);
-      }
-    });
-
-    return { title, words, issues };
+  function heading(text) {
+    if (text.length > 150) return false;
+    const test = text.match(/\btest\s*[:.\-]?\s*(\d+)\b/i);
+    const unit = text.match(/\bunit\s*(\d+)\b/i);
+    if (unit) currentUnit = `Unit ${unit[1]}`;
+    if (test) {
+      currentTest = `Test ${test[1]}`;
+      columns = null;
+    } else if (unit) {
+      currentTest = "";
+      columns = null;
+    }
+    return Boolean(test || unit);
   }
 
-  throw new Error(
-    "Không tìm thấy bảng từ vựng đúng mẫu. Tệp cần có cột Từ vựng hoặc Keyword / Collocation và cột Nghĩa tiếng Việt."
-  );
+  function group() {
+    const label = [currentUnit, currentTest].filter(Boolean).join(" ? ") || "T?t c? t? v?ng";
+    let result = groups.find(item => item.label === label);
+    if (!result) {
+      result = { label, words: [], errors: [], missingExamples: 0 };
+      groups.push(result);
+    }
+    return result;
+  }
+
+  for (const element of Array.from(body?.childNodes || [])) {
+    if (element.nodeType !== 1) continue;
+    if (element.localName === "p") {
+      heading(cellText(element));
+      continue;
+    }
+    if (element.localName !== "tbl") continue;
+    tableNumber++;
+    const rows = directChildren(element, "tr");
+    rows.forEach((row, index) => {
+      const cells = directChildren(row, "tc").map(cellText);
+      const nonempty = cells.filter(cell => cell.trim());
+      if (!nonempty.length) return;
+      if (nonempty.length === 1 && heading(nonempty[0])) return;
+      const headers = cells.map(normalizeHeader);
+      const keyword = headers.findIndex(value =>
+        value.includes("keyword") || value.includes("collocation") ||
+        value === "tu vung" || value.startsWith("tu vung ") ||
+        value.includes("tu tieng anh")
+      );
+      const definition = headers.findIndex(value =>
+        value.includes("dinh nghia") || value.includes("nghia tieng viet")
+      );
+      if (keyword >= 0 && definition >= 0) {
+        columns = {
+          keyword, definition,
+          ipa: headers.findIndex(value => value === "ipa" || value.includes("phien am") || value.includes("phat am") || /\bipa\b/.test(value)),
+          example: headers.findIndex(value => value.includes("vi du"))
+        };
+        recognized = true;
+        return;
+      }
+      if (!columns) return;
+      const word = {
+        english: (cells[columns.keyword] || "").trim(),
+        vietnamese: (cells[columns.definition] || "").trim(),
+        ipa: columns.ipa >= 0 ? (cells[columns.ipa] || "").trim() : "",
+        example: columns.example >= 0 ? (cells[columns.example] || "").trim() : ""
+      };
+      const target = group();
+      if (!word.english || !word.vietnamese) {
+        target.errors.push(`B?ng ${tableNumber}, d?ng ${index + 1}: thi?u t? ti?ng Anh ho?c ngh?a ti?ng Vi?t.`);
+      } else {
+        target.words.push(word);
+        if (!word.example) target.missingExamples++;
+      }
+    });
+  }
+
+  if (!recognized || !groups.length) {
+    throw new Error("Kh?ng t?m th?y b?ng t? v?ng ??ng m?u. T?p c?n c? c?t T? v?ng ho?c Keyword / Collocation v? c?t Ngh?a ti?ng Vi?t.");
+  }
+  return { title, groups };
 }
 
 async function readOutlineFile(event) {
@@ -1445,70 +1481,96 @@ async function readOutlineFile(event) {
   const count = document.getElementById("newQuizCount");
   const preview = document.getElementById("previewQuizBtn");
   const save = document.getElementById("saveQuizBtn");
+  const choice = document.getElementById("vocabularyTestChoice");
+  const select = document.getElementById("vocabularyTest");
   const file = event.target.files?.[0];
-
   scannedVocabulary = [];
-  preview.disabled = true;
-  save.disabled = true;
-  count.disabled = true;
-  summary.hidden = true;
-
+  preview.disabled = save.disabled = count.disabled = true;
+  summary.hidden = choice.hidden = true;
+  select.replaceChildren();
+  message.textContent = "";
   if (!file) return;
-
   if (!/\.docx$/i.test(file.name)) {
-    message.textContent = "Chỉ nhận tệp Word định dạng .docx.";
+    message.textContent = "Ch? nh?n t?p Word ??nh d?ng .docx.";
     return;
   }
-
-  message.textContent = "Đang quét đề cương...";
-
+  message.textContent = "?ang qu?t ?? c??ng...";
   try {
     const parsed = await parseVocabularyDocx(file);
-
-    if (parsed.words.length < 4) {
-      throw new Error(`Cần ít nhất 4 từ vựng để tạo câu hỏi trắc nghiệm. ${parsed.issues.join(" ")}`);
-    }
-
-    scannedVocabulary = parsed.words;
+    // Ignore the result if the user selected another file while parsing.
+    if (event.target.files?.[0] !== file) return;
     scannedDocumentTitle = parsed.title;
-
     const titleInput = document.getElementById("newQuizTitle");
     if (!titleInput.value.trim()) titleInput.value = parsed.title;
 
-    count.disabled = false;
-    count.min = "4";
-    count.max = String(parsed.words.length);
-    count.value = String(Math.min(10, parsed.words.length));
-
-    document.getElementById("countHint").textContent =
-      `Bạn có thể chọn từ 4 đến ${parsed.words.length} câu hỏi.`;
-
-    summary.replaceChildren();
-    const scanCount = document.createElement("strong");
-    scanCount.textContent = `Đã quét ${parsed.words.length} từ vựng.`;
-    const sample = document.createElement("p");
-    sample.textContent = `Ví dụ: ${parsed.words[0].english} — ${parsed.words[0].vietnamese}`;
-    summary.append(scanCount, sample);
-    if (parsed.issues.length) {
-      const details = document.createElement("details");
-      const heading = document.createElement("summary");
-      heading.textContent = `${parsed.issues.length} dòng cần lưu ý`;
-      const list = document.createElement("ul");
-      parsed.issues.forEach(issue => {
-        const item = document.createElement("li");
-        item.textContent = issue;
-        list.appendChild(item);
-      });
-      details.append(heading, list);
-      summary.appendChild(details);
+    function showGroup(index) {
+      scannedVocabulary = [];
+      preview.disabled = save.disabled = count.disabled = true;
+      summary.hidden = true;
+      message.textContent = "";
+      const selected = parsed.groups[index];
+      if (!selected) return;
+      summary.replaceChildren();
+      const scanCount = document.createElement("strong");
+      scanCount.textContent = `${selected.label}: ?? ??c ${selected.words.length} t? v?ng.`;
+      summary.appendChild(scanCount);
+      if (selected.words.length) {
+        const sample = document.createElement("p");
+        sample.textContent = `V? d?: ${selected.words[0].english} ? ${selected.words[0].vietnamese}`;
+        summary.appendChild(sample);
+      }
+      if (selected.missingExamples) {
+        const note = document.createElement("p");
+        note.textContent = `${selected.missingExamples} t? ch?a c? v? d?; kh?ng d?ng ???c d?ng v?n d?ng.`;
+        summary.appendChild(note);
+      }
+      if (selected.errors.length) {
+        const details = document.createElement("details");
+        details.open = true;
+        const heading = document.createElement("summary");
+        heading.textContent = `${selected.errors.length} d?ng thi?u d? li?u c?n s?a trong t?p`;
+        const list = document.createElement("ul");
+        selected.errors.forEach(issue => {
+          const item = document.createElement("li");
+          item.textContent = issue;
+          list.appendChild(item);
+        });
+        details.append(heading, list);
+        summary.appendChild(details);
+        message.textContent = "H?y b? sung c?c d?ng thi?u d? li?u r?i t?i l?i t?p ?? tr?nh b? s?t t?.";
+      } else if (selected.words.length < 4) {
+        message.textContent = "C?n ?t nh?t 4 t? v?ng ?? t?o c?u h?i tr?c nghi?m.";
+      } else {
+        scannedVocabulary = selected.words;
+        count.disabled = false;
+        count.min = "4";
+        count.max = String(selected.words.length);
+        count.value = String(selected.words.length);
+        document.getElementById("countHint").textContent = `B?n c? th? ch?n t? 4 ??n ${selected.words.length} c?u h?i.`;
+        preview.disabled = save.disabled = false;
+      }
+      summary.hidden = false;
     }
-
-    summary.hidden = false;
-    preview.disabled = false;
-    save.disabled = false;
-    message.textContent = "";
+    if (parsed.groups.length > 1) {
+      choice.hidden = false;
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Ch?n Test";
+      select.appendChild(placeholder);
+      parsed.groups.forEach((item, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = `${item.label} ? ${item.words.length} t?${item.errors.length ? ` (${item.errors.length} d?ng c?n s?a)` : ""}`;
+        select.appendChild(option);
+      });
+      select.onchange = () => showGroup(select.value === "" ? -1 : Number(select.value));
+      message.textContent = "H?y ch?n Test ?? t?o quiz.";
+    } else {
+      select.onchange = null;
+      showGroup(0);
+    }
   } catch (error) {
-    message.textContent = error.message;
+    if (event.target.files?.[0] === file) message.textContent = error.message;
   }
 }
 
