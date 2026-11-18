@@ -602,7 +602,7 @@ function renderCreateForm() {
       <input id="outlineFile" type="file"
         accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         required>
-      <p class="form-help">Nhận bảng có cột Từ vựng và Nghĩa tiếng Việt, hoặc Keyword / Collocation và Định nghĩa tiếng Việt. Loại từ và IPA là tùy chọn; dạng vận dụng cần thêm cột ví dụ.</p>
+      <p class="form-help">Nhận bảng từ vựng hoặc danh sách từng dòng theo mẫu: từ tiếng Anh: /phiên âm/ — nghĩa tiếng Việt. Dạng vận dụng cần câu ví dụ.</p>
       <div id="vocabularyTestChoice" hidden>
         <label for="vocabularyTest">Chọn Test</label>
         <select id="vocabularyTest"></select>
@@ -1420,10 +1420,30 @@ async function parseVocabularyDocx(file) {
     return result;
   }
 
+  let paragraphNumber = 0;
   for (const element of Array.from(body?.childNodes || [])) {
     if (element.nodeType !== 1) continue;
     if (element.localName === "p") {
-      heading(cellText(element));
+      paragraphNumber++;
+      let text = cellText(element).trim();
+      if (!text) continue;
+      // Some Word files join the next test heading to the preceding entry.
+      const trailingHeading = text.includes(":") && text.match(/\s*(?:K\s*12\s*)?(unit\s*\d+\s*test\s*\d+)\s*$/i);
+      if (trailingHeading) text = text.slice(0, trailingHeading.index).trim();
+      if (!text.includes(":") && heading(text)) continue;
+      const entry = text.match(/^\s*(?:\d+\s*[.)]\s*)?(.+?)\s*:\s*(.*)$/);
+      if (entry) {
+        recognized = true;
+        const target = group();
+        const meaning = entry[2].match(/^\s*(?:\/([^/]+)\/\s*)?(?:[—–]|\s+-\s+)\s*(.+)$/);
+        if (!entry[1].trim() || !meaning || !meaning[2].trim()) {
+          target.errors.push(`Đoạn ${paragraphNumber}: chưa nhận được từ và nghĩa theo mẫu từ: /phiên âm/ — nghĩa.`);
+        } else {
+          target.words.push({ english: entry[1].trim(), vietnamese: meaning[2].trim(), ipa: (meaning[1] || "").trim(), example: "" });
+          target.missingExamples++;
+        }
+      }
+      if (trailingHeading) heading(trailingHeading[1]);
       continue;
     }
     if (element.localName !== "tbl") continue;
@@ -1452,6 +1472,11 @@ async function parseVocabularyDocx(file) {
         recognized = true;
         return;
       }
+      // A continuation table can start directly with word / IPA / meaning.
+      if (!columns && cells.length === 3 && /^\s*\/[^/]+\/\s*$/.test(cells[1]) && cells[0].trim() && cells[2].trim()) {
+        columns = { keyword: 0, ipa: 1, definition: 2, example: -1 };
+        recognized = true;
+      }
       if (!columns) return;
       const word = {
         english: (cells[columns.keyword] || "").trim(),
@@ -1470,7 +1495,7 @@ async function parseVocabularyDocx(file) {
   }
 
   if (!recognized || !groups.length) {
-    throw new Error("Không tìm thấy bảng từ vựng đúng mẫu. Tệp cần có cột Từ vựng hoặc Keyword / Collocation và cột Nghĩa tiếng Việt.");
+    throw new Error("Không tìm thấy từ vựng đúng mẫu. Hãy dùng bảng từ vựng hoặc mỗi dòng theo mẫu: từ tiếng Anh: /phiên âm/ — nghĩa tiếng Việt.");
   }
   return { title, groups };
 }
