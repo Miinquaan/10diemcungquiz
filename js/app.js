@@ -604,7 +604,7 @@ function renderCreateForm() {
         required>
       <p class="form-help">Nhận bảng có cột Từ vựng và Nghĩa tiếng Việt, hoặc Keyword / Collocation và Định nghĩa tiếng Việt. Loại từ và IPA là tùy chọn; dạng vận dụng cần thêm cột ví dụ.</p>
       <div id="vocabularyTestChoice" hidden>
-        <label for="vocabularyTest">Ch?n Test</label>
+        <label for="vocabularyTest">Chọn Test</label>
         <select id="vocabularyTest"></select>
       </div>
       <div id="scanSummary" class="scan-summary" hidden></div>
@@ -1411,7 +1411,7 @@ async function parseVocabularyDocx(file) {
   }
 
   function group() {
-    const label = [currentUnit, currentTest].filter(Boolean).join(" ? ") || "T?t c? t? v?ng";
+    const label = [currentUnit, currentTest].filter(Boolean).join(" — ") || "Tất cả từ vựng";
     let result = groups.find(item => item.label === label);
     if (!result) {
       result = { label, words: [], errors: [], missingExamples: 0 };
@@ -1461,7 +1461,7 @@ async function parseVocabularyDocx(file) {
       };
       const target = group();
       if (!word.english || !word.vietnamese) {
-        target.errors.push(`B?ng ${tableNumber}, d?ng ${index + 1}: thi?u t? ti?ng Anh ho?c ngh?a ti?ng Vi?t.`);
+        target.errors.push(`Bảng ${tableNumber}, dòng ${index + 1}: thiếu từ tiếng Anh hoặc nghĩa tiếng Việt.`);
       } else {
         target.words.push(word);
         if (!word.example) target.missingExamples++;
@@ -1470,7 +1470,7 @@ async function parseVocabularyDocx(file) {
   }
 
   if (!recognized || !groups.length) {
-    throw new Error("Kh?ng t?m th?y b?ng t? v?ng ??ng m?u. T?p c?n c? c?t T? v?ng ho?c Keyword / Collocation v? c?t Ngh?a ti?ng Vi?t.");
+    throw new Error("Không tìm thấy bảng từ vựng đúng mẫu. Tệp cần có cột Từ vựng hoặc Keyword / Collocation và cột Nghĩa tiếng Việt.");
   }
   return { title, groups };
 }
@@ -1491,10 +1491,10 @@ async function readOutlineFile(event) {
   message.textContent = "";
   if (!file) return;
   if (!/\.docx$/i.test(file.name)) {
-    message.textContent = "Ch? nh?n t?p Word ??nh d?ng .docx.";
+    message.textContent = "Chỉ nhận tệp Word định dạng .docx.";
     return;
   }
-  message.textContent = "?ang qu?t ?? c??ng...";
+  message.textContent = "Đang quét đề cương...";
   try {
     const parsed = await parseVocabularyDocx(file);
     // Ignore the result if the user selected another file while parsing.
@@ -1512,23 +1512,23 @@ async function readOutlineFile(event) {
       if (!selected) return;
       summary.replaceChildren();
       const scanCount = document.createElement("strong");
-      scanCount.textContent = `${selected.label}: ?? ??c ${selected.words.length} t? v?ng.`;
+      scanCount.textContent = `${selected.label}: đã đọc ${selected.words.length} từ vựng.`;
       summary.appendChild(scanCount);
       if (selected.words.length) {
         const sample = document.createElement("p");
-        sample.textContent = `V? d?: ${selected.words[0].english} ? ${selected.words[0].vietnamese}`;
+        sample.textContent = `Ví dụ: ${selected.words[0].english} — ${selected.words[0].vietnamese}`;
         summary.appendChild(sample);
       }
       if (selected.missingExamples) {
         const note = document.createElement("p");
-        note.textContent = `${selected.missingExamples} t? ch?a c? v? d?; kh?ng d?ng ???c d?ng v?n d?ng.`;
+        note.textContent = `${selected.missingExamples} từ chưa có ví dụ; không dùng được dạng vận dụng.`;
         summary.appendChild(note);
       }
       if (selected.errors.length) {
         const details = document.createElement("details");
         details.open = true;
         const heading = document.createElement("summary");
-        heading.textContent = `${selected.errors.length} d?ng thi?u d? li?u c?n s?a trong t?p`;
+        heading.textContent = `${selected.errors.length} dòng thiếu dữ liệu cần sửa trong tệp`;
         const list = document.createElement("ul");
         selected.errors.forEach(issue => {
           const item = document.createElement("li");
@@ -1537,16 +1537,16 @@ async function readOutlineFile(event) {
         });
         details.append(heading, list);
         summary.appendChild(details);
-        message.textContent = "H?y b? sung c?c d?ng thi?u d? li?u r?i t?i l?i t?p ?? tr?nh b? s?t t?.";
+        message.textContent = "Hãy bổ sung các dòng thiếu dữ liệu rồi tải lại tệp để tránh bỏ sót từ.";
       } else if (selected.words.length < 4) {
-        message.textContent = "C?n ?t nh?t 4 t? v?ng ?? t?o c?u h?i tr?c nghi?m.";
+        message.textContent = "Cần ít nhất 4 từ vựng để tạo câu hỏi trắc nghiệm.";
       } else {
         scannedVocabulary = selected.words;
         count.disabled = false;
         count.min = "4";
         count.max = String(selected.words.length);
         count.value = String(selected.words.length);
-        document.getElementById("countHint").textContent = `B?n c? th? ch?n t? 4 ??n ${selected.words.length} c?u h?i.`;
+        document.getElementById("countHint").textContent = `Bạn có thể chọn từ 4 đến ${selected.words.length} câu hỏi.`;
         preview.disabled = save.disabled = false;
       }
       summary.hidden = false;
@@ -1555,16 +1555,16 @@ async function readOutlineFile(event) {
       choice.hidden = false;
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = "Ch?n Test";
+      placeholder.textContent = "Chọn Test";
       select.appendChild(placeholder);
       parsed.groups.forEach((item, index) => {
         const option = document.createElement("option");
         option.value = String(index);
-        option.textContent = `${item.label} ? ${item.words.length} t?${item.errors.length ? ` (${item.errors.length} d?ng c?n s?a)` : ""}`;
+        option.textContent = `${item.label} — ${item.words.length} từ${item.errors.length ? ` (${item.errors.length} dòng cần sửa)` : ""}`;
         select.appendChild(option);
       });
       select.onchange = () => showGroup(select.value === "" ? -1 : Number(select.value));
-      message.textContent = "H?y ch?n Test ?? t?o quiz.";
+      message.textContent = "Hãy chọn Test để tạo quiz.";
     } else {
       select.onchange = null;
       showGroup(0);
