@@ -2296,7 +2296,7 @@ async function loadMyQuizzes() {
   try {
     const { data, error } = await db
       .from("quizzes")
-      .select("id,title,description,visibility,status,question_count")
+      .select("id,title,description,visibility,status,share_scope,question_count")
       .eq("owner_id", currentUser.id)
       .order("created_at", { ascending: false });
 
@@ -2319,10 +2319,90 @@ async function loadMyQuizzes() {
           ? "Công khai"
           : "Riêng tư"}</p>`;
       card.appendChild(makeButton("Làm thử", () => startQuiz(quiz.id)));
+      card.appendChild(makeButton("Chỉnh sửa", () => editMyQuiz(card, quiz)));
+      card.appendChild(makeButton("Xóa", () => deleteMyQuiz(quiz, card)));
       area.appendChild(card);
     });
   } catch (error) {
     area.textContent = `Không tải được quiz: ${error.message}`;
+  }
+}
+
+function editMyQuiz(card, quiz) {
+  if (card.querySelector(".quiz-edit-form")) return;
+  const form = document.createElement("form");
+  form.className = "quiz-form quiz-edit-form";
+  const titleLabel = document.createElement("label");
+  titleLabel.textContent = "Tên quiz";
+  const title = document.createElement("input");
+  title.value = quiz.title;
+  title.maxLength = 150;
+  title.required = true;
+  titleLabel.appendChild(title);
+  const descriptionLabel = document.createElement("label");
+  descriptionLabel.textContent = "Mô tả";
+  const description = document.createElement("input");
+  description.value = quiz.description || "";
+  descriptionLabel.appendChild(description);
+  const visibilityLabel = document.createElement("label");
+  visibilityLabel.textContent = "Chia sẻ";
+  const visibility = document.createElement("select");
+  [["private", "Riêng tư"], ["class", "Quiz của lớp"], ["shared", "Quiz chung"]].forEach(([value, label]) => {
+    visibility.add(new Option(label, value));
+  });
+  visibility.value = quiz.visibility === "private" ? "private" : (quiz.share_scope === "shared" ? "shared" : "class");
+  visibilityLabel.appendChild(visibility);
+  const note = document.createElement("p");
+  note.textContent = "Chỉnh sửa tên, mô tả và phạm vi chia sẻ. Nội dung câu hỏi được giữ nguyên.";
+  const message = document.createElement("p");
+  message.setAttribute("aria-live", "polite");
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = "Lưu thay đổi";
+  const cancel = makeButton("Hủy", () => form.remove());
+  cancel.type = "button";
+  form.append(titleLabel, descriptionLabel, visibilityLabel, note, save, cancel, message);
+  card.appendChild(form);
+  title.focus();
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const name = title.value.trim();
+    if (!name) { message.textContent = "Hãy nhập tên quiz."; return; }
+    save.disabled = true;
+    message.textContent = "Đang lưu...";
+    try {
+      const scope = visibility.value;
+      const { data, error } = await db.from("quizzes").update({
+        title: name,
+        description: description.value.trim(),
+        visibility: scope === "private" ? "private" : "public",
+        share_scope: scope === "shared" ? "shared" : "class",
+        status: scope === "private" ? "private" : "published"
+      }).eq("id", quiz.id).eq("owner_id", currentUser.id).select("id");
+      if (error) throw error;
+      if (!data?.length) throw new Error("Không có quyền sửa quiz này hoặc quiz không còn tồn tại.");
+      await loadMyQuizzes();
+    } catch (error) {
+      message.textContent = `Không thể lưu thay đổi: ${error.message}`;
+      save.disabled = false;
+    }
+  });
+}
+
+async function deleteMyQuiz(quiz, card) {
+  if (!confirm(`Xóa quiz “${quiz.title}”? Thao tác này không thể hoàn tác và có thể ảnh hưởng đến bài tập, lịch sử liên quan.`)) return;
+  const message = document.createElement("p");
+  message.setAttribute("aria-live", "polite");
+  message.textContent = "Đang xóa quiz...";
+  card.appendChild(message);
+  try {
+    const { data, error } = await db.from("quizzes").delete()
+      .eq("id", quiz.id).eq("owner_id", currentUser.id).select("id");
+    if (error) throw error;
+    if (!data?.length) throw new Error("Không có quyền xóa quiz này hoặc quiz không còn tồn tại.");
+    await loadMyQuizzes();
+  } catch (error) {
+    message.textContent = `Không thể xóa quiz: ${error.message}`;
   }
 }
 
