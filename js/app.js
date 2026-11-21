@@ -578,12 +578,8 @@ async function loadQuizzes() {
 }
 
 function renderCreateForm() {
-  if (selectedSubject === "biology") {
-    renderBiologyCreateForm();
-    return;
-  }
   if (selectedSubject !== "english") {
-    renderTheoryCreateForm();
+    renderBiologyCreateForm();
     return;
   }
 
@@ -797,16 +793,16 @@ function normalizeHeader(value) {
 function renderBiologyCreateForm() {
   const area = document.getElementById("createQuizForm");
   document.getElementById("createContext").textContent =
-    `Lớp ${selectedGrade} • Sinh • ${selectedSectionTitle} • Mỗi quiz dùng toàn bộ câu hỏi của một bài.`;
+    `Lớp ${selectedGrade} • ${subjectName()} • ${selectedSectionTitle} • Mỗi quiz dùng toàn bộ câu hỏi của một bài.`;
 
   area.innerHTML = `
     <form id="biologyQuizForm" class="quiz-form">
       <button type="button" id="openTheoryGenerator">Tạo câu hỏi từ lý thuyết bằng AI</button>
       <label for="biologyQuizTitle">Tên quiz</label>
       <input id="biologyQuizTitle" maxlength="150" required
-        placeholder="Ví dụ: Bài 4 - Sinh học 10">
+        placeholder="Nhập tên quiz">
 
-      <label for="biologyOutlineFile">Tệp đề cương Sinh học</label>
+      <label for="biologyOutlineFile">Tệp đề cương trắc nghiệm và đúng/sai</label>
       <input id="biologyOutlineFile" type="file" accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
       <p class="form-help">Nhận .docx và .pdf. Với Word, ảnh đi kèm từng câu được giữ lại trong quiz; ảnh EMF/WMF được chuyển sang PNG chỉ để trình duyệt hiển thị, đồng thời vẫn lưu bản gốc. Tệp .doc cũ cần được lưu lại thành .docx trước khi tải.</p>
 
@@ -910,20 +906,17 @@ function lessonTitle(text) {
 }
 
 function questionTypeFromHeading(text) {
-  const clean = withoutMarks(text).toUpperCase();
-  if (/(?:PHẦN\s*)?(?:II|2)\s*[.):]?\s*TRẮC\s*NGHIỆM\s*ĐÚNG\s*SAI/.test(clean)) {
-    return "true_false";
-  }
-  if (/(?:PHẦN\s*)?(?:I|1)\s*[.):]?\s*TRẮC\s*NGHIỆM(?:\s*NHIỀU)?\s*LỰA\s*CHỌN/.test(clean)) {
-    return "multiple_choice";
-  }
+  const clean = normalizeHeader(withoutMarks(text));
+  if (!/^(?:phan\b|muc\b|(?:ii?|[12])\s*[.):-]|trac nghiem|cau hoi|dung\s*[/–-]?\s*sai)/.test(clean)) return "";
+  if (/dung\s*[/–-]?\s*sai/.test(clean)) return "true_false";
+  if (/trac nghiem|nhieu lua chon|4 dap an/.test(clean)) return "multiple_choice";
   return "";
 }
 
 function splitInlineQuestions(paragraph) {
   const marked = typeof paragraph === "string" ? paragraph : paragraph.marked;
   const imageIds = typeof paragraph === "string" ? [] : paragraph.imageIds;
-  const starts = [...marked.matchAll(/Câu\s*\d+\s*[.:]/gi)]
+  const starts = [...marked.matchAll(/\bCâu\s*\d+\s*[.):]/gi)]
     .map(match => match.index).filter(index => index > 0);
   if (!starts.length) return [paragraph];
   const boundaries = [0, ...starts, marked.length];
@@ -937,8 +930,8 @@ function splitInlineQuestions(paragraph) {
 
 function parseBiologyBlocks(paragraphs) {
   const lessons = new Map();
-  let lesson = "";
-  let type = "";
+  let lesson = "Toàn bộ đề cương";
+  let type = "multiple_choice";
   let block = null;
 
   const finish = () => {
@@ -974,7 +967,7 @@ function parseBiologyBlocks(paragraphs) {
       return;
     }
 
-    if (/^Câu\s*\d+/i.test(clean)) {
+    if (/^(?:Câu\s*\d+\b|\d+\s*[.)]\s+)/i.test(clean)) {
       finish();
       block = { marked, lines: [marked], imageIds: [...imageIds] };
       return;
@@ -1016,42 +1009,42 @@ function markedTextState(marked) {
 function parseBiologyChoice(marked) {
   const state = markedTextState(marked);
   const clean = state.plain;
-  const matches = [...clean.matchAll(/(^|[^A-ZÀ-Ỹ])([A-D])\s*[.)]/g)];
-  if (matches.length < 4) return null;
+  const matches = [...clean.matchAll(/(^|[^A-ZÀ-Ỹ*])(\*?)([A-D])\s*[.):]/g)];
+  if (matches.map(match => match[3]).join("") !== "ABCD") return null;
   const labelOffset = match => match.index + match[1].length;
   const first = labelOffset(matches[0]);
   const prompt = clean.slice(0, first)
-    .replace(/^Câu\s*\d+\s*[.:]?\s*/i, "").trim();
+    .replace(/^(?:Câu\s*)?\d+\s*[.):]?\s*/i, "").trim();
   const options = matches.slice(0, 4).map((match, index) => {
     const start = labelOffset(match);
     const end = index < 3
       ? labelOffset(matches[index + 1])
       : clean.length;
-    const key = match[2];
+    const key = match[3];
     const text = clean.slice(start, end)
-      .replace(/^[A-D]\s*[.)]\s*/i, "").trim();
+      .replace(/^\*?[A-D]\s*[.):]\s*/i, "").trim();
     const hasUnderline = state.underlined.slice(start, end).some(Boolean);
-    return { key, text, correct: hasUnderline || /\*\s*$/.test(text) };
+    return { key, text: text.replace(/^\*\s*|\s*\*$/g, ""), correct: hasUnderline || Boolean(match[2]) || /^\*|\*$/.test(text) };
   });
   const correct = options.filter(option => option.correct).map(option => option.key);
-  return prompt && options.length === 4 && correct.length
+  return prompt && options.every(option => option.text) && correct.length === 1
     ? { type: "multiple_choice", prompt, options, correct_answers: correct }
     : null;
 }
 
 function parseBiologyTrueFalse(lines) {
   const first = withoutMarks(lines[0] || "")
-    .replace(/^Câu\s*\d+\s*[.:]?\s*/i, "").trim();
+    .replace(/^(?:Câu\s*)?\d+\s*[.):]?\s*/i, "").trim();
   const assertions = [];
 
   lines.slice(1).forEach(line => {
     const clean = withoutMarks(line);
-    const match = clean.match(/^([a-d])\s*[.)]\s*(.+)/i);
+    const match = clean.match(/^(\*?)([a-d])\s*[.):]\s*(.+)/i);
     if (!match) return;
     assertions.push({
-      key: match[1].toLowerCase(),
-      text: match[2].trim(),
-      correct: line.includes("[[U]]") || /\*\s*$/.test(clean)
+      key: match[2].toLowerCase(),
+      text: match[3].replace(/^\*\s*|\s*\*$/g, "").trim(),
+      correct: Boolean(match[1]) || match[3].startsWith("*") || line.includes("[[U]]") || /\*\s*$/.test(clean)
     });
   });
 
@@ -1237,7 +1230,7 @@ function selectBiologyLesson(event) {
   document.getElementById("saveBiologyBtn").disabled = !enabled;
   if (enabled && !document.getElementById("biologyQuizTitle").value.trim()) {
     document.getElementById("biologyQuizTitle").value =
-      `${selectedBiologyLesson.title} - Sinh học 10`;
+      `${selectedBiologyLesson.title} - ${subjectName()} ${selectedGrade}`;
   }
 }
 
@@ -1317,7 +1310,7 @@ async function saveBiologyQuiz(event) {
       owner_id: currentUser.id,
       title,
       description: selectedBiologyLesson.title,
-      subject: "biology",
+      subject: selectedSubject,
       class_code: selectedGrade,
       section_id: selectedSectionId,
       visibility,
@@ -1430,18 +1423,24 @@ async function parseVocabularyDocx(file) {
       // Some Word files join the next test heading to the preceding entry.
       const trailingHeading = text.includes(":") && text.match(/\s*(?:K\s*12\s*)?(unit\s*\d+\s*test\s*\d+)\s*$/i);
       if (trailingHeading) text = text.slice(0, trailingHeading.index).trim();
-      if (!text.includes(":") && heading(text)) continue;
-      const entry = text.match(/^\s*(?:\d+\s*[.)]\s*)?(.+?)\s*:\s*(.*)$/);
+      if (!text.replace(/:$/, "").includes(":") && heading(text)) continue;
+      const entryText = text.replace(/^\s*\d+\s*[.)]\s*/, "");
+      const entry = entryText.match(/^(.+?)\s*:\s*(.*)$/) ||
+        entryText.match(/^(.+?)\s+(\/[^/]+\/\s*[—–-].*)$/) ||
+        entryText.match(/^(.+?)\s+([—–-]\s+.+)$/);
       if (entry) {
         recognized = true;
         const target = group();
-        const meaning = entry[2].match(/^\s*(?:\/([^/]+)\/\s*)?(?:[—–]|\s+-\s+)\s*(.+)$/);
+        const meaning = entry[2].match(/^\s*(?:\/([^/]+)\/\s*)?[—–-]\s*(.+)$/);
         if (!entry[1].trim() || !meaning || !meaning[2].trim()) {
-          target.errors.push(`Đoạn ${paragraphNumber}: chưa nhận được từ và nghĩa theo mẫu từ: /phiên âm/ — nghĩa.`);
+          target.errors.push(`Đoạn ${paragraphNumber} («${text}»): chưa nhận được từ và nghĩa theo mẫu từ: /phiên âm/ — nghĩa.`);
         } else {
           target.words.push({ english: entry[1].trim(), vietnamese: meaning[2].trim(), ipa: (meaning[1] || "").trim(), example: "" });
           target.missingExamples++;
         }
+      }
+      if (!entry && (/^\d+[.)]\s*/.test(text) || element.getElementsByTagNameNS(namespace, "numPr").length)) {
+        group().errors.push(`Đoạn ${paragraphNumber}: «${text}» sai mẫu, đã bỏ qua.`);
       }
       if (trailingHeading) heading(trailingHeading[1]);
       continue;
@@ -1458,10 +1457,10 @@ async function parseVocabularyDocx(file) {
       const keyword = headers.findIndex(value =>
         value.includes("keyword") || value.includes("collocation") ||
         value === "tu vung" || value.startsWith("tu vung ") ||
-        value.includes("tu tieng anh")
+        value.includes("tu tieng anh") || ["word", "vocabulary", "english", "tieng anh"].includes(value)
       );
       const definition = headers.findIndex(value =>
-        value.includes("dinh nghia") || value.includes("nghia tieng viet")
+        value.includes("dinh nghia") || value.includes("nghia tieng viet") || ["nghia", "tieng viet", "meaning", "vietnamese"].includes(value)
       );
       if (keyword >= 0 && definition >= 0) {
         columns = {
@@ -1486,7 +1485,7 @@ async function parseVocabularyDocx(file) {
       };
       const target = group();
       if (!word.english || !word.vietnamese) {
-        target.errors.push(`Bảng ${tableNumber}, dòng ${index + 1}: thiếu từ tiếng Anh hoặc nghĩa tiếng Việt.`);
+        target.errors.push(`Bảng ${tableNumber}, dòng ${index + 1}: «${word.english || word.vietnamese || cells.join(" ")}» thiếu từ tiếng Anh hoặc nghĩa tiếng Việt.`);
       } else {
         target.words.push(word);
         if (!word.example) target.missingExamples++;
@@ -1553,7 +1552,7 @@ async function readOutlineFile(event) {
         const details = document.createElement("details");
         details.open = true;
         const heading = document.createElement("summary");
-        heading.textContent = `${selected.errors.length} dòng thiếu dữ liệu cần sửa trong tệp`;
+        heading.textContent = `${selected.errors.length} dòng sai mẫu được bỏ qua`;
         const list = document.createElement("ul");
         selected.errors.forEach(issue => {
           const item = document.createElement("li");
@@ -1562,8 +1561,8 @@ async function readOutlineFile(event) {
         });
         details.append(heading, list);
         summary.appendChild(details);
-        message.textContent = "Hãy bổ sung các dòng thiếu dữ liệu rồi tải lại tệp để tránh bỏ sót từ.";
-      } else if (selected.words.length < 4) {
+      }
+      if (selected.words.length < 4) {
         message.textContent = "Cần ít nhất 4 từ vựng để tạo câu hỏi trắc nghiệm.";
       } else {
         scannedVocabulary = selected.words;
@@ -1585,7 +1584,7 @@ async function readOutlineFile(event) {
       parsed.groups.forEach((item, index) => {
         const option = document.createElement("option");
         option.value = String(index);
-        option.textContent = `${item.label} — ${item.words.length} từ${item.errors.length ? ` (${item.errors.length} dòng cần sửa)` : ""}`;
+        option.textContent = `${item.label} — ${item.words.length} từ${item.errors.length ? ` (${item.errors.length} dòng bỏ qua)` : ""}`;
         select.appendChild(option);
       });
       select.onchange = () => showGroup(select.value === "" ? -1 : Number(select.value));
@@ -1675,7 +1674,7 @@ function startPreviewQuiz() {
 async function saveNewQuiz(event) {
   event.preventDefault();
 
-  if (selectedSubject === "biology") {
+  if (selectedSubject !== "english") {
     await saveBiologyQuiz(event);
     return;
   }
