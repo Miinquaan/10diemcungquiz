@@ -929,6 +929,30 @@ function splitInlineQuestions(paragraph) {
 }
 
 function parseBiologyBlocks(paragraphs) {
+  const plain = paragraph => withoutMarks(typeof paragraph === "string" ? paragraph : paragraph.marked);
+  const keyIndex = paragraphs.findIndex(p => /^(?:bang\s+)?dap an(?:\s+(?:va giai thich|tham khao|trac nghiem))?\s*[:.]?$/i.test(normalizeHeader(plain(p))));
+  const choices = new Map();
+  const assertions = new Map();
+  if (keyIndex >= 0) {
+    let secondPart = false;
+    let number = "";
+    for (const paragraph of paragraphs.slice(keyIndex + 1)) {
+      const line = normalizeHeader(plain(paragraph));
+      if (/^(?:phan\s+)?(?:ii|2)\b.*(?:dung|sai)|^phan\s+(?:ii|2)\s*[:.]?$/.test(line)) secondPart = true;
+      if (secondPart) {
+        const question = line.match(/^cau\s*(\d+)\s*[:.]?$/);
+        if (question) number = question[1];
+        const answer = line.match(/^([a-d])[.)]\s*(dung|sai)\b/);
+        if (number && answer) assertions.set(number + answer[1], answer[2] === "dung");
+      } else if (/^(?:cau\s*)?\d+\s*[.):–-]?\s*[a-d]\b/.test(line)) {
+        for (const match of line.matchAll(/(?:cau\s*)?(\d+)\s*[.):–-]?\s*([a-d])\b/g)) {
+          const key = match[2].toUpperCase();
+          choices.set(match[1], choices.has(match[1]) && choices.get(match[1]) !== key ? null : key);
+        }
+      }
+    }
+    paragraphs = paragraphs.slice(0, keyIndex);
+  }
   const lessons = new Map();
   let lesson = "Toàn bộ đề cương";
   let type = "multiple_choice";
@@ -937,9 +961,14 @@ function parseBiologyBlocks(paragraphs) {
   const finish = () => {
     if (!block || !lesson || !type) return;
     const question = type === "multiple_choice"
-      ? parseBiologyChoice(block.marked)
+      ? parseBiologyChoice(block.marked, choices.get(block.number))
       : parseBiologyTrueFalse(block.lines);
     if (question) {
+      if (question.type === "true_false" && assertions.size) {
+        if (!question.options.every(option => assertions.has(block.number + option.key))) return;
+        question.options.forEach(option => { option.correct = assertions.get(block.number + option.key); });
+        question.correct_answers = question.options.map(option => String(option.correct));
+      }
       question.lesson = lesson;
       question.imageIds = [...new Set(block.imageIds || [])];
       if (!lessons.has(lesson)) lessons.set(lesson, []);
@@ -969,7 +998,7 @@ function parseBiologyBlocks(paragraphs) {
 
     if (/^(?:Câu\s*\d+\b|\d+\s*[.)]\s+)/i.test(clean)) {
       finish();
-      block = { marked, lines: [marked], imageIds: [...imageIds] };
+      block = { number: clean.match(/\d+/)[0], marked, lines: [marked], imageIds: [...imageIds] };
       return;
     }
 
@@ -1006,7 +1035,7 @@ function markedTextState(marked) {
   return { plain, underlined };
 }
 
-function parseBiologyChoice(marked) {
+function parseBiologyChoice(marked, answerKey) {
   const state = markedTextState(marked);
   const clean = state.plain;
   const matches = [...clean.matchAll(/(^|[^A-ZÀ-Ỹ*])(\*?)([A-D])\s*[.):]/g)];
@@ -1024,6 +1053,7 @@ function parseBiologyChoice(marked) {
     const text = clean.slice(start, end)
       .replace(/^\*?[A-D]\s*[.):]\s*/i, "").trim();
     const hasUnderline = state.underlined.slice(start, end).some(Boolean);
+    if (answerKey) return { key, text, correct: key === answerKey };
     return { key, text: text.replace(/^\*\s*|\s*\*$/g, ""), correct: hasUnderline || Boolean(match[2]) || /^\*|\*$/.test(text) };
   });
   const correct = options.filter(option => option.correct).map(option => option.key);
