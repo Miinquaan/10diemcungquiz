@@ -976,6 +976,7 @@ function parseBiologyBlocks(paragraphs) {
     }
   };
 
+  const numberedWithPrefix = paragraphs.some(p => /^Câu\s*\d+/i.test(plain(p)));
   paragraphs.flatMap(splitInlineQuestions).forEach(paragraph => {
     const marked = typeof paragraph === "string" ? paragraph : paragraph.marked;
     const imageIds = typeof paragraph === "string" ? [] : paragraph.imageIds;
@@ -996,7 +997,13 @@ function parseBiologyBlocks(paragraphs) {
       return;
     }
 
-    if (/^(?:Câu\s*\d+\b|\d+\s*[.)]\s+)/i.test(clean)) {
+    if (/^III\s*[.):]?\s*TRẢ LỜI/i.test(clean)) {
+      finish();
+      block = null;
+      type = "";
+      return;
+    }
+    if (/^Câu\s*\d+\b/i.test(clean) || (!numberedWithPrefix && /^\d+\s*[.)]\s+/.test(clean))) {
       finish();
       block = { number: clean.match(/\d+/)[0], marked, lines: [marked], imageIds: [...imageIds] };
       return;
@@ -1038,7 +1045,18 @@ function markedTextState(marked) {
 function parseBiologyChoice(marked, answerKey) {
   const state = markedTextState(marked);
   const clean = state.plain;
-  const matches = [...clean.matchAll(/(^|[^A-ZÀ-Ỹ*])(\*?)([A-D])\s*[.):]/g)];
+  const candidates = [...clean.matchAll(/()(\*?)([A-D])[ \t]*[.):]/g)];
+  const matches = [];
+  for (const key of "ABCD") {
+    const previous = matches[matches.length - 1];
+    const possible = candidates.filter(match => match[3] === key &&
+      (!previous || match.index > previous.index) &&
+      !/^\s*(?:[A-D][.):]|$)/.test(clean.slice(match.index + match[0].length)));
+    const label = possible.find(match => state.underlined[match.index] ||
+      !/[\p{L}\d]/u.test(clean[match.index - 1] || "")) || possible[0];
+    if (!label) return null;
+    matches.push(label);
+  }
   if (matches.map(match => match[3]).join("") !== "ABCD") return null;
   const labelOffset = match => match.index + match[1].length;
   const first = labelOffset(matches[0]);
